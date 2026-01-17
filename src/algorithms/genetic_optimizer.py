@@ -2,12 +2,13 @@ import numpy as np
 import random
 from shapely.geometry import Polygon
 from typing import List, Tuple
-from path_planner import BoustrophedonPlanner
+from .path_planner import BoustrophedonPlanner
+from .decomposition import ConcaveDecomposer
 
 class GeneticOptimizer:
     """
     Implementación de la Fase 4: Optimización por Algoritmo Genético (GA).
-    Basado en el Algoritmo 1 y Ecuaciones 11-17 del paper Li et al. (2023).
+    Basado en el Algoritmo 1 y Ecuaciones 11-17 del paper de Li et al. (2023).
     """
 
     def __init__(self, planner: BoustrophedonPlanner, 
@@ -39,7 +40,7 @@ class GeneticOptimizer:
         # Área objetivo (S) del polígono [cite: 792]
         target_area_S = polygon.area
 
-        print(f"🧬 Iniciando Algoritmo Genético ({self.generations} generaciones)...")
+        print(f"Iniciando Algoritmo Genetico ({self.generations} generaciones)...")
 
         for gen in range(self.generations):
             fitness_values = []
@@ -50,12 +51,23 @@ class GeneticOptimizer:
             raw_metrics = []  # (l, S_prime, path) para cada individuo
 
             for angle in population:
-                # Generar ruta y métricas base con el Planner (Fase 3)
-                # Ec. 11 (flight_distance) y Ec. 13 (coverage_area)
-                path, l, s_prime = self.planner.generate_path(polygon, angle)
+                # 1. Descomposición del Polígono (Fase 2)
+                # Si el polígono es cóncavo y obstructivo para este ángulo, se divide.
+                sub_polygons = ConcaveDecomposer.decompose(polygon, angle)
                 
-                distances_l.append(l)
-                raw_metrics.append((l, s_prime, path))
+                # 2. Generación de Ruta para cada sub-polígono (Fase 3)
+                total_path = []
+                total_l = 0.0
+                total_s_prime = 0.0
+                
+                for sub_poly in sub_polygons:
+                    path, l, s_prime = self.planner.generate_path(sub_poly, angle)
+                    total_path.extend(path)
+                    total_l += l
+                    total_s_prime += s_prime
+                
+                distances_l.append(total_l)
+                raw_metrics.append((total_l, total_s_prime, total_path))
 
             # --- CÁLCULO DE FITNESS (Ec. 14 y 15) ---
             # Necesitamos la norma L2 de todas las distancias para normalizar [cite: 800]

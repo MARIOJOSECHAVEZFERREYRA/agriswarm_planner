@@ -10,7 +10,7 @@ class ConcaveDecomposer:
     """
 
     @staticmethod
-    def decompose(polygon: Polygon, heading_angle_deg: float):
+    def decompose(polygon: Polygon, heading_angle_deg: float, depth: int = 0):
         """
         Función recursiva principal.
         Verifica si el polígono tiene concavidades 'Tipo 2' que obstruyan el vuelo
@@ -18,6 +18,10 @@ class ConcaveDecomposer:
         
         :return: Lista de Polígonos convexos (o seguros para volar).
         """
+        if depth > 50:
+            print("Max Recursion Depth Reached. Returning original polygon.")
+            return [polygon]
+
         # Convertir ángulo a radianes para cálculos trigonométricos
         heading_rad = np.radians(heading_angle_deg)
         
@@ -34,12 +38,27 @@ class ConcaveDecomposer:
                 if ConcaveDecomposer._is_type_2(coords, i, heading_rad):
                     # --- FASE DE CORTE (Section 2.4) ---
                     # Lanzar rayo paralelo al heading y cortar
+                    
+                    # Debug loop
+                    # print(f"[D{depth}] Cutting at vertex {i} {coords[i]} heading {heading_angle_deg}")
+
                     sub_polygons = ConcaveDecomposer._split_polygon_at_vertex(polygon, coords[i], heading_rad)
                     
+                    # Verificación de seguridad: si no se cortó nada, evitar loop infinito
+                    if len(sub_polygons) < 2:
+                        # print(f"⚠️ Split failed to produce sub-polygons at depth {depth}. Skipping this vertex.")
+                        continue 
+                        
                     # Llamada recursiva: intentar descomponer las partes resultantes
                     result = []
                     for sub in sub_polygons:
-                        result.extend(ConcaveDecomposer.decompose(sub, heading_angle_deg))
+                        # Ensure we are passing valid polygons and not everything again
+                        # Check area to ensure we are not processing the same full polygon
+                        if sub.area > 0.99 * polygon.area:
+                             # print("⚠️ Sub-polygon area too similar to parent. Recursion danger.")
+                             pass
+                             
+                        result.extend(ConcaveDecomposer.decompose(sub, heading_angle_deg, depth + 1))
                     return result
 
         # Si no se encontró ninguna concavidad obstructiva, el polígono está listo

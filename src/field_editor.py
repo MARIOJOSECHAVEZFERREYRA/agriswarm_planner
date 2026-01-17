@@ -35,9 +35,9 @@ class InteractiveEditor:
         ax_load = plt.axes([0.4, 0.05, 0.2, 0.075])
         ax_save = plt.axes([0.65, 0.05, 0.2, 0.075])
 
-        self.btn_reset = Button(ax_reset, '🗑️ Reiniciar', color='lightcoral', hovercolor='red')
-        self.btn_load = Button(ax_load, '📂 Cargar Último', color='lightyellow', hovercolor='gold')
-        self.btn_save = Button(ax_save, '✅ Terminar', color='lightgreen', hovercolor='lime')
+        self.btn_reset = Button(ax_reset, 'Reiniciar', color='lightcoral', hovercolor='red')
+        self.btn_load = Button(ax_load, 'Cargar Ultimo', color='lightyellow', hovercolor='gold')
+        self.btn_save = Button(ax_save, 'Terminar', color='lightgreen', hovercolor='lime')
 
         # Conectar eventos
         self.btn_reset.on_clicked(self.reset)
@@ -93,14 +93,14 @@ class InteractiveEditor:
             poly = FieldIO.load_field(self.filename)
             self.points = list(poly.exterior.coords)[:-1] # Quitamos el punto repetido final
             self.update_plot('b')
-            self.show_message("✅ Campo cargado. Puedes editarlo.", color="green")
+            self.show_message("Campo cargado. Puedes editarlo.", color="green")
         except Exception as e:
             self.show_message(f"Error al cargar: {str(e)}", color="red")
 
     def finish(self, event):
         """Valida y guarda"""
         if len(self.points) < 3:
-            self.show_message("⚠️ Necesitas al menos 3 puntos", color="orange")
+            self.show_message("Necesitas al menos 3 puntos", color="orange")
             return
 
         # Intentar crear polígono
@@ -109,14 +109,14 @@ class InteractiveEditor:
         # --- VALIDACIÓN CRÍTICA (Detectar el "8") ---
         if not candidate_poly.is_valid:
             # ERROR DETECTADO
-            self.show_message("❌ ERROR: Geometría Inválida (Líneas cruzadas)\nReinicia o corrige los puntos.", color="red")
+            self.show_message("ERROR: Geometria Invalida (Lineas cruzadas)\nReinicia o corrige los puntos.", color="red")
             self.update_plot('r') # Dibujar en ROJO para mostrar el error
             self.ax.set_title("¡ERROR! EL POLÍGONO SE CRUZA A SÍ MISMO", color='red', fontweight='bold')
             # NO cerramos la ventana. Dejamos que el usuario corrija.
         else:
             # ÉXITO
             self.final_polygon = candidate_poly
-            self.show_message("✅ Polígono Válido. Procesando...", color="green")
+            self.show_message("Poligono Valido. Procesando...", color="green")
             plt.pause(0.5) # Pequeña pausa para ver el mensaje verde
             plt.close(self.fig)
 

@@ -62,13 +62,14 @@ class MarginReducer:
             theta = np.arccos(dot_prod)
 
             # Detectar si el ángulo es Cóncavo (Reflex) usando Producto Cruz (2D)
-            # Cross product (z-component): a_x*b_y - a_y*b_x
-            cross_prod = np.cross(u_next, u_prev)
+            # Para 3D, usamos solo componentes X e Y para determinar la concavidad (proyección)
+            # Cross product 2D: a_x*b_y - a_y*b_x
+            cross_prod_2d = u_next[0] * u_prev[1] - u_next[1] * u_prev[0]
             
             # Determinar si es convexo o cóncavo
             # En recorrido CCW, si cross > 0 el giro es a la izquierda (convexo estándar)
             # Si cross < 0, es un giro a la derecha ("mordida" hacia adentro -> cóncavo)
-            is_convex = cross_prod > 0
+            is_convex = cross_prod_2d > 0
 
             # --- ECUACIÓN 3: Magnitud del Desplazamiento ---
             # Distancia a mover el vértice: L = h / sin(theta/2)

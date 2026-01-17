@@ -11,9 +11,8 @@ import datetime
 # Imports Propios
 from drone_db import DroneDB
 from field_io import FieldIO
-from margin import MarginReducer
-from path_planner import BoustrophedonPlanner
-from genetic_optimizer import GeneticOptimizer
+from algorithms import MarginReducer, BoustrophedonPlanner, GeneticOptimizer
+# from decomposition import ConcaveDecomposer # Not currently used in app_window based on previous view?
 from geo_utils import GeoUtils
 from gui.map_widget import MapWidget
 from gui.styles import *
