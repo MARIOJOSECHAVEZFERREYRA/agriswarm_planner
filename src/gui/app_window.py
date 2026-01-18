@@ -1,7 +1,7 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QComboBox, QPushButton, QTextEdit, QMessageBox, 
-                             QFrame, QSizePolicy)
+                             QFrame, QSizePolicy, QFormLayout, QDoubleSpinBox, QCheckBox)
 from PyQt6.QtCore import Qt
 from shapely.geometry import Polygon, Point, LineString
 from shapely.ops import substring
@@ -9,7 +9,7 @@ import math
 import datetime
 
 # Imports Propios
-from drone_db import DroneDB
+from drone_db import DroneDB, SpecValue
 from field_io import FieldIO
 from algorithms import MarginReducer, BoustrophedonPlanner, GeneticOptimizer, MobileStation, MissionSegmenter
 # from decomposition import ConcaveDecomposer # Not currently used in app_window based on previous view?
@@ -21,9 +21,10 @@ class AgriSwarmApp(QMainWindow):
     def __init__(self, filename=None):
         super().__init__()
         self.filename = filename
-        self.setWindowTitle("AgriSwarm GCS - Professional")
-        self.setGeometry(100, 100, 1366, 800)
-        self.setStyleSheet("background-color: #ecf0f1;")
+        self.setWindowTitle("AgriSwarm Planner - Tesis v2.5")
+        self.resize(1200, 800)
+        # Apply only global styles (Dialogs, etc). Sidebar has its own.
+        self.setStyleSheet(QMESSAGEBOX_STYLE)
 
         # Estado Logico
         self.points = []
@@ -74,6 +75,40 @@ class AgriSwarmApp(QMainWindow):
         self.combo_drones.currentTextChanged.connect(self.on_drone_changed)
         side_layout.addWidget(self.combo_drones)
 
+        # --- PARAMETROS DE MISION (Overrides) ---
+        self.params_layout = QFormLayout()
+        self.params_layout.setSpacing(8)
+        
+        # 1. Ancho de Trabajo (Swath)
+        self.spin_swath = QDoubleSpinBox()
+        self.spin_swath.setRange(1.0, 20.0)
+        self.spin_swath.setSingleStep(0.5)
+        self.spin_swath.setSuffix(" m")
+        self.params_layout.addRow("Ancho (Swath):", self.spin_swath)
+        
+        # 2. Tanque
+        self.spin_tank = QDoubleSpinBox()
+        self.spin_tank.setRange(5.0, 100.0)
+        self.spin_tank.setSingleStep(1.0)
+        self.spin_tank.setSuffix(" L")
+        self.params_layout.addRow("Tanque:", self.spin_tank)
+        
+        # 3. Velocidad
+        self.spin_speed = QDoubleSpinBox()
+        self.spin_speed.setRange(1.0, 15.0)
+        self.spin_speed.setSingleStep(0.5)
+        self.spin_speed.setSuffix(" m/s")
+        self.params_layout.addRow("Velocidad:", self.spin_speed)
+        
+        # 4. Flujo (L/min)
+        self.spin_flow = QDoubleSpinBox()
+        self.spin_flow.setRange(1.0, 40.0)
+        self.spin_flow.setSingleStep(0.5)
+        self.spin_flow.setSuffix(" L/min")
+        self.params_layout.addRow("Flujo Bomba:", self.spin_flow)
+        
+        side_layout.addLayout(self.params_layout)
+
         side_layout.addWidget(QLabel("GEOMETRIA"))
         btn_grid = QHBoxLayout()
         self.btn_clear = QPushButton("BORRAR")
@@ -89,6 +124,12 @@ class AgriSwarmApp(QMainWindow):
         btn_grid.addWidget(self.btn_clear)
         btn_grid.addWidget(self.btn_load)
         side_layout.addLayout(btn_grid)
+        
+        # Opciones Visuales
+        self.chk_swath = QCheckBox("Mostrar Cobertura Real (Swath)")
+        self.chk_swath.setChecked(True)
+        self.chk_swath.stateChanged.connect(lambda s: self.map_widget.set_swath_visibility(bool(s)))
+        side_layout.addWidget(self.chk_swath)
 
         self.add_separator(side_layout)
 
@@ -117,6 +158,9 @@ class AgriSwarmApp(QMainWindow):
 
         # Inicializar
         self.map_widget.clear_map()
+        
+        # Force initial populate (Now that UI is ready)
+        self.on_drone_changed(self.combo_drones.currentText())
 
     def add_separator(self, layout):
         line = QFrame()
@@ -163,9 +207,51 @@ class AgriSwarmApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
-    def on_drone_changed(self, text):
-        self.current_drone = text
-        self.text_report.setText(f"Dron activo: {text}")
+    def on_drone_changed(self, drone_name):
+        self.current_drone = drone_name
+        self.text_report.setText(f"<b>Dron activo:</b> {drone_name}")
+        
+        spec = DroneDB.get_specs(drone_name)
+        if spec:
+            # Populate UI with defaults from DB
+            
+            # Swath Handling (New Smart Logic)
+            # DroneDB swath_m is typically (SpecValue(min), SpecValue(max))
+            swath_range = spec.spray.swath_m
+            
+            min_swath = 1.0
+            max_swath = 20.0
+            default_swath = 5.0
+            
+            if isinstance(swath_range, tuple) and len(swath_range) == 2:
+                # Extract min/max from SpecValue objects
+                try:
+                    val1 = float(swath_range[0].value)
+                    val2 = float(swath_range[1].value)
+                    min_swath = min(val1, val2)
+                    max_swath = max(val1, val2)
+                    default_swath = max_swath # Default to max width for efficiency
+                except (ValueError, AttributeError):
+                    pass
+            elif isinstance(swath_range, SpecValue):
+                # Fallback if it's a single value (unlikely based on DroneDB structure but safe)
+                val = float(swath_range.value)
+                min_swath = val
+                max_swath = val
+                default_swath = val
+
+            self.spin_swath.setRange(min_swath, max_swath)
+            self.spin_swath.setValue(default_swath)
+            self.spin_swath.setToolTip(f"Rango permitido: {min_swath}m - {max_swath}m")
+            
+            # Tank
+            self.spin_tank.setValue(spec.spray.tank_l.value)
+            
+            # Speed (Work Speed)
+            self.spin_speed.setValue(spec.flight.work_speed_kmh.value / 3.6) # km/h -> m/s
+            
+            # Flow
+            self.spin_flow.setValue(spec.spray.max_flow_l_min.value)
 
     def run_optimization(self):
         if len(self.points) < 3: return
@@ -191,28 +277,69 @@ class AgriSwarmApp(QMainWindow):
             max_s = float(specs.spray.swath_m[1].value)
             real_swath = (min_s + max_s) / 2.0
         
+        # 1. READ OVERRIDES
         try:
-            planner = BoustrophedonPlanner(spray_width=real_swath)
+            # Create a shallow copy or modify the spec to reflect UI values
+            # DroneSpec is a dataclass? No, standard object. But we need to use these values.
+            # Easiest way: Update the 'specs' object or create a transient one.
+            # But specs structure is complex. 
+            # Better strategy: Pass overrides to Planner/Segmenter logic directly or patch the spec.
+            
+            # Patching the spec for this run (safe if we re-fetch from DB on change)
+            override_swath = self.spin_swath.value()
+            override_tank = self.spin_tank.value()
+            override_speed_ms = self.spin_speed.value()
+            override_flow = self.spin_flow.value()
+            
+            # Update Spec Object used for Logic
+            # Note: We need to be careful not to break the structure.
+            # Assuming we can just use these variables where needed.
+            
+            specs.spray.tank_l.value = override_tank
+            specs.flight.work_speed_kmh.value = override_speed_ms * 3.6
+            specs.spray.max_flow_l_min.value = override_flow
+            # Swath is a tuple typically (min, max). We will force the planner to use our specific value.
+            
+        except AttributeError:
+             pass # Specs might not be loaded if field invalid
+             
+        # 2. PLANNING 
+        try:
+            planner = BoustrophedonPlanner(spray_width=override_swath) # Use override
             optimizer = GeneticOptimizer(planner, pop_size=50, generations=30)
             best_angle, self.best_path, self.metrics = optimizer.optimize(campo_seguro)
             
             # --- FASE 2.5: PHYSICS SEGMENTATION ---
-            # Ahora segmentamos la ruta basandonos en fisica (bateria/tanque)
             mobile_station = MobileStation(truck_speed_mps=5.0) 
+            
+            # Update segmenter to use override target rate if we had one (we only expose swath/tank/flow/speed)
+            # Assuming target_rate is fixed or we should add it? 
+            # For now keep 20.0 L/ha hardcoded or add input? 
+            # Let's check MissionSegmenter init... it takes proper specs.
+            # We patched specs relative to tank/flow/speed.
+            # But segmenter might use swath from somewhere? MissionSegmenter takes `specs`.
+            # We need to ensure MissionSegmenter uses the corrected swath for its calcs if any (flow rate check).
+            
             segmenter = MissionSegmenter(specs, mobile_station, target_rate_l_ha=20.0)
+            
+            # Also patch segmenter internal speed if it cached it differently?
+            # It uses specs.flight.work_speed_kmh.value. We patched it above. Good.
             
             # Check pump first
             is_pump_ok, pump_msg, req_flow = segmenter.validate_pump()
             if not is_pump_ok:
                  QMessageBox.warning(self, "Pump Warning", pump_msg)
-                 # We continue potentially or return? Lets continue but warn.
             
             # Usar el poligono del camino (buffer) como referencia para el camion
             road_poly = self.polygon.buffer(5.0, join_style=2)
             
             mission_cycles = segmenter.segment_path(self.polygon, self.best_path, truck_polygon=road_poly)
             
-            # Calcular distancia total camion sumando todos los ciclos
+            # Inject Swath Width into cycles metadata for visualization
+            for cycle in mission_cycles:
+                cycle['swath_width'] = override_swath
+
+            # ... continue ...
             total_truck_dist = sum(c.get('truck_dist', 0) for c in mission_cycles)
             self.truck_dist = total_truck_dist
             

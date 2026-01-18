@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QGraph
 from PyQt6.QtCore import Qt, QPointF, pyqtSignal, QRectF
 from PyQt6.QtGui import QPen, QBrush, QColor, QFont, QPainter, QPolygonF, QWheelEvent, QMouseEvent, QPainterPath
 import math
+from shapely.geometry import LineString, Polygon as ShapelyPoly
 
 class MissionMarkerItem(QGraphicsItem):
     """
@@ -13,7 +14,6 @@ class MissionMarkerItem(QGraphicsItem):
         self.setPos(x, y)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
         self.setZValue(100) # Siempre visible
-        
         self.label = label
         self.color = QColor(color)
         self.text_color = QColor("white")
@@ -101,6 +101,22 @@ class MapWidget(QGraphicsView):
         # Estado de arrastre interno
         self.dragging_point_index = None
 
+        # State
+        self.zoom_level = 1.0 # Note: m11 tracks internal scale too, but we keep this for legacy logic if any
+        self.pan_start = QPointF(0, 0)
+        self.is_panning = False
+        self.show_swath = True
+        
+        # Cache for redraw
+        self.last_polygon_geom = None
+        self.last_safe_geom = None
+        self.last_mission_cycles = None
+
+    def set_swath_visibility(self, visible: bool):
+        self.show_swath = visible
+        if self.last_mission_cycles:
+             self.draw_results(self.last_polygon_geom, self.last_safe_geom, self.last_mission_cycles)
+    
     def drawBackground(self, painter, rect):
         """Rejilla Dinámica"""
         super().drawBackground(painter, rect)
@@ -227,6 +243,11 @@ class MapWidget(QGraphicsView):
         Dibuja los resultados de la mision segmentada.
         :param mission_cycles: Lista de dicts [{'type': 'work', 'path': [], 'truck_path': ...}, ...]
         """
+
+        self.last_polygon_geom = polygon_geom
+        self.last_safe_geom = safe_geom
+        self.last_mission_cycles = mission_cycles
+        
         self.clear_map()
         
         if polygon_geom:
@@ -255,24 +276,92 @@ class MapWidget(QGraphicsView):
         colors = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#2c3e50', '#c0392b']
         
         cycle_idx = 0
+        drawn_segments_history = {} # Key: ( (x1,y1), (x2,y2) ) -> Count
         for cycle in mission_cycles:
             path = cycle.get('path', [])
             truck_path_list = cycle.get('truck_path_coords', []) # Expecting list of coords
             
             if not path: continue
             
-            # 1. Dibujar Ruta Vuelo
+            # 1. Dibujar Ruta Vuelo con ANCHO REAL (SWATH)
             col = colors[cycle_idx % len(colors)]
+            swath_width = cycle.get('swath_width', 5.0) # Default 5m
             
-            qpath = QPainterPath()
-            qpath.moveTo(path[0][0], path[0][1])
-            for p in path[1:]:
-                qpath.lineTo(p[0], p[1])
+            # NUEVA LOGICA: Usar metadatos de segmentos si existen
+            segments_meta = cycle.get('segments', [])
             
-            pen = QPen(QColor(col))
-            pen.setWidth(2)
-            pen.setCosmetic(True)
-            self.scene.addPath(qpath, pen).setZValue(10)
+            if segments_meta:
+                # Iterar por segmento individual para decidir si dibujamos "gordo" o "fino"
+                for seg in segments_meta:
+                    p1 = seg['p1']
+                    p2 = seg['p2']
+                    is_spraying = seg['spraying']
+                    
+                    # Dibujar Linea Central (Siempre, pero estilo varia?)
+                    # Mejor: Si es spraying -> Buffer + Linea fina centro
+                    # Si no es spraying -> Solo Linea fina (o punteada?)
+                    
+                    # 1. Linea base
+                    qseg = QPainterPath()
+                    qseg.moveTo(p1[0], p1[1])
+                    qseg.lineTo(p2[0], p2[1])
+                    
+                    pen_seg = QPen(QColor(col))
+                    pen_seg.setWidth(2 if is_spraying else 1) # Un poco mas fino si es transito
+                    pen_seg.setStyle(Qt.PenStyle.SolidLine if is_spraying else Qt.PenStyle.DotLine) # Punteado si no fumiga?
+                    # El usuario pidio "LineString delgada". SolidLine fina esta bien.
+                    pen_seg.setStyle(Qt.PenStyle.SolidLine) 
+                    pen_seg.setCosmetic(True)
+                    self.scene.addPath(qseg, pen_seg).setZValue(10)
+                    
+                    # 2. Buffer (Solo si Spraying y Habilitado)
+                    if self.show_swath and is_spraying:
+                        line_geom = LineString([p1[:2], p2[:2]])
+                        swath_poly = line_geom.buffer(swath_width / 2.0, cap_style=2, join_style=2)
+                        
+                        if swath_poly.geom_type == 'Polygon':
+                            polys = [swath_poly]
+                        else:
+                            polys = swath_poly.geoms
+                            
+                        for poly in polys:
+                             qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
+                             c = QColor(col)
+                             c.setAlpha(150) # Mas visible! (antes 90)
+                             brush = QBrush(c)
+                             pen_b = QPen(Qt.PenStyle.NoPen)
+                             self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
+
+            else:
+                # FALLBACK (Codigo Viejo)
+                # A. Dibujar Buffer Completo
+                if len(path) > 1:
+                    flight_line = LineString(path)
+                    swath_poly = flight_line.buffer(swath_width / 2.0, cap_style=2, join_style=2)
+                    
+                    if swath_poly.geom_type == 'Polygon':
+                        polys = [swath_poly]
+                    else:
+                        polys = swath_poly.geoms # MultiPolygon
+                        
+                    for poly in polys:
+                        qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
+                        c = QColor(col)
+                        c.setAlpha(80) 
+                        brush = QBrush(c)
+                        pen_b = QPen(Qt.PenStyle.NoPen)
+                        self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
+    
+                # B. Dibujar Linea Central
+                qpath = QPainterPath()
+                qpath.moveTo(path[0][0], path[0][1])
+                for p in path[1:]:
+                    qpath.lineTo(p[0], p[1])
+                
+                pen = QPen(QColor(col))
+                pen.setWidth(2)
+                pen.setCosmetic(True)
+                self.scene.addPath(qpath, pen).setZValue(10)
             
             # Marcadores de Inicio/Fin de ciclo
             label_start = "S" if cycle_idx == 0 else f"R{cycle_idx}"
@@ -286,18 +375,59 @@ class MapWidget(QGraphicsView):
             # 2. Dibujar Ruta Camion (si existe para este ciclo)
             if truck_path_list and len(truck_path_list) > 1:
                 tpath = QPainterPath()
+                
+                # --- COLOR GRADIENT LOGIC ---
+                # En lugar de desplazar espacialmente, cambiamos el color para indicar "capas" de tiempo.
+                # Base: Naranja (#e67e22). 
+                # Cada vez que pasamos por el mismo sitio, oscurecemos o cambiamos el tono.
+                
+                p_start = truck_path_list[0]
+                p_end = truck_path_list[-1]
+                
+                # Relajar la precision para detectar solapamientos
+                # Usar enteros (metros) es suficiente para saber si es "el mismo tramo"
+                # O incluso round a 0 decimales.
+                k1 = (int(p_start[0]), int(p_start[1]))
+                k2 = (int(p_end[0]), int(p_end[1]))
+                
+                # Ordenar para que A->B sea igual que B->A
+                segment_key = tuple(sorted((k1, k2)))
+                
+                # Check fuzzy match against existing keys?
+                # Por ahora probamos con claves enteras rigidas.
+                
+                overlap_count = drawn_segments_history.get(segment_key, 0)
+                drawn_segments_history[segment_key] = overlap_count + 1
+                
+                # Construir Path (Directo, CENTRADO, sin offset espacial)
                 tpath.moveTo(truck_path_list[0][0], truck_path_list[0][1])
                 for p in truck_path_list[1:]:
                     tpath.lineTo(p[0], p[1])
                 
-                pen_t = QPen(QColor('#e67e22'))
-                pen_t.setStyle(Qt.PenStyle.DashLine)
-                pen_t.setWidth(3)
-                pen_t.setCosmetic(True)
-                self.scene.addPath(tpath, pen_t).setZValue(5)
+                # Calcular Color - PALETA DE ALTO CONTRASTE
+                # 0: Naranja (Base)
+                # 1: Rojo (Ida y Vuelta / Trafico Medio)
+                # 2: Morado (Trafico Alto)
+                # 3+: Negro (Saturado)
                 
-                # Marcador Truck
-                # self.draw_mission_marker(truck_path_list[0][0], truck_path_list[0][1], '#d35400', "T")
+                if overlap_count == 0:
+                    pen_color = QColor('#e67e22') # Naranja
+                    width = 3
+                elif overlap_count == 1:
+                    pen_color = QColor('#e74c3c') # Rojo Brillante
+                    width = 3
+                elif overlap_count == 2:
+                    pen_color = QColor('#8e44ad') # Morado
+                    width = 4
+                else:
+                    pen_color = QColor('#000000') # Negro
+                    width = 4
+
+                pen_t = QPen(pen_color) 
+                pen_t.setStyle(Qt.PenStyle.DashLine)
+                pen_t.setWidth(width) 
+                pen_t.setCosmetic(True)
+                self.scene.addPath(tpath, pen_t).setZValue(5 + overlap_count) # Poner encima las nuevas capas
             
             cycle_idx += 1
             

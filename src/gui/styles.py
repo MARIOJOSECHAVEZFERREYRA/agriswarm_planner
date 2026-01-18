@@ -79,3 +79,25 @@ BTN_LOAD_STYLE = f"""
     }}
     QPushButton:hover {{ background-color: #2980b9; }}
 """
+
+QMESSAGEBOX_STYLE = f"""
+    QMessageBox {{
+        background-color: {DARK_BLUE};
+        color: {TEXT_WHITE};
+    }}
+    QMessageBox QLabel {{
+        color: {TEXT_WHITE};
+        font-size: 13px;
+    }}
+    QMessageBox QPushButton {{
+        background-color: {MID_BLUE};
+        color: white;
+        border: 1px solid #7f8c8d;
+        border-radius: 4px;
+        padding: 5px 15px;
+    }}
+    QMessageBox QPushButton:hover {{
+        background-color: {ACCENT_BLUE};
+        color: white;
+    }}
+"""

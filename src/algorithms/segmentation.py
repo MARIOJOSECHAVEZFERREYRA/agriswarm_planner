@@ -54,118 +54,167 @@ class MissionSegmenter:
             
         return True, "OK", req_flow_l_min
 
+    def _is_spraying(self, p1, p2, polygon):
+        """
+        Determina si un segmento es de fumigacion (Grid Line dentro del campo)
+        o de transito (Deadheading/Turn).
+        """
+        line = LineString([p1[:2], p2[:2]])
+        mid = line.interpolate(0.5, normalized=True)
+        
+        # Relaxed check: Distance to polygon is 0 if inside or on boundary.
+        # buffer(1e-9).contains might be slow.
+        # distance method is robust.
+        dist = polygon.distance(mid)
+        return dist < 0.1 # Tolerance for floating point errors
+
     def segment_path(self, polygon, raw_path, truck_polygon=None):
         """
-        Segmenta la ruta.
-        :param polygon: Shapely Polygon del campo (cultivo).
-        :param raw_path: Lista de tuplas [(x,y,z), ...]
-        :param truck_polygon: Shapely Polygon de la ruta del camion (buffer exterior). Si se provee, los R_opt estaran aqui.
-        :return: List[dict] -> Ciclos de mision
+        Segmenta la ruta con logica Smart Nozzle.
         """
-        segments = []
-        current_segment = []
+        cycles = []
+        current_cycle_points = []
+        current_cycle_segments = [] # List of {'p1':, 'p2':, 'spraying': bool}
         
-        # Poligono de referencia para el camion (Donde vive el camion)
-        # Si no nos dan uno especifico, asumimos que el camion va por el borde del cultivo (comportamiento original)
         ref_polygon_truck = truck_polygon if truck_polygon else polygon
         
-        # Estado actual del dron
+        # Estado actual
         current_liquid = self.tank_capacity
         current_time_air = 0.0
         
-        # 0. INICIALIZACION CORRECTA DEL CAMION
-        # El camion NO empieza dentro del campo. Empieza en el perimetro EXTERIOR (ref_polygon_truck),
-        # en el punto mas cercano al primer punto de trabajo del dron.
+        # Initial Truck Pos
         p_start = raw_path[0]
         r_start, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p_start[:2], p_start[:2]) 
         truck_pos = (r_start.x, r_start.y)
         
-        # Safety Thresholds
-        safe_time_return = 120.0 # 2 mins reserve for landing/RTH
+        # Start Cycle Logic
+        # Commute 1: Truck -> First Point (DEADHEADING)
+        # We handle commutes DYNAMICALLY when flushing a cycle or starting a new one.
+        # But for the loop, we need to account for the "Initial Commute" cost in the FIRST cycle.
         
-        for i in range(len(raw_path) - 1):
+        # Init first cycle
+        # We need to calculate initial commute p1->p2 cost? No, Truck->P1 cost.
+        dist_commute_in = np.linalg.norm(np.array(truck_pos) - np.array(p_start[:2]))
+        time_commute_in = dist_commute_in / self.speed_ms
+        current_time_air += time_commute_in
+        # No liquid for commute
+        
+        last_point_added = truck_pos
+        
+        i = 0
+        while i < len(raw_path) - 1:
             p1 = raw_path[i]
             p2 = raw_path[i+1]
             
-            # 1. Calcular costo de este tramo (P1 -> P2)
+            # 1. Analyze Segment (Spray vs Deadhead)
+            is_spray = self._is_spraying(p1, p2, polygon)
+            
             dist_step = np.linalg.norm(np.array(p1[:2]) - np.array(p2[:2]))
             time_step = dist_step / self.speed_ms
-            liq_step = dist_step * self.liters_per_meter
             
-            # 2. Predecir costo de RETORNO desde P2 (el final de este paso)
-            # Calculamos R_opt desde P2 sobre el camino del camion
-            r_opt_p2, dist_truck, time_truck = self.station.calculate_rendezvous(ref_polygon_truck, p2[:2], truck_pos[:2])
-            dist_return_air = np.linalg.norm(np.array(p2[:2]) - np.array([r_opt_p2.x, r_opt_p2.y]))
-            time_return_air = dist_return_air / (self.speed_ms * 1.5) # Vuelve mas rapido (vacío)
+            # Liquid only if Spraying
+            liq_step = (dist_step * self.liters_per_meter) if is_spray else 0.0
             
-            total_time_if_commit = current_time_air + time_step + time_return_air + safe_time_return
-            liquid_if_commit = current_liquid - liq_step
+            # 2. Predict Return Cost from P2
+            r_opt_p2, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p2[:2], truck_pos[:2])
+            dist_return = np.linalg.norm(np.array(p2[:2]) - np.array([r_opt_p2.x, r_opt_p2.y]))
+            time_return = dist_return / (self.speed_ms * 1.5)
             
-            # 3. Decision Logic: Podemos hacer este paso Y volver?
-            CAN_DO_STEP = (total_time_if_commit <= self.max_endurance_s) and (liquid_if_commit >= 0)
+            full_cycle_time = current_time_air + time_step + time_return + 120.0 # Safety
+            full_cycle_liq = current_liquid - liq_step # Return no gasta liq
             
-            if CAN_DO_STEP:
-                # Ejecutar paso
-                current_segment.append(p1)
-                if i == len(raw_path) - 2: # Ultimo punto
-                    current_segment.append(p2)
-                    
+            CAN_DO = (full_cycle_time <= self.max_endurance_s) and (full_cycle_liq >= 0)
+            
+            if CAN_DO:
+                # Add segment
+                seg = {'p1': p1, 'p2': p2, 'spraying': is_spray}
+                current_cycle_segments.append(seg)
+                current_cycle_points.append(p1) # Only store starts, append end later
+                
                 current_liquid -= liq_step
                 current_time_air += time_step
+                last_point_added = p2
+                i += 1
             else:
-                # NO PODEMOS. Cortar en P1
-                current_segment.append(p1) 
+                # CUT CYCLE at P1
+                # Finalize current cycle
+                current_cycle_points.append(p1) # Close loop at P1
                 
-                # Calcular R_opt real desde P1
-                r_opt_p1, dist_truck_p1, time_truck_p1 = self.station.calculate_rendezvous(ref_polygon_truck, p1[:2], truck_pos[:2])
+                # Calculate return stats
+                r_opt_p1, dist_truck, _ = self.station.calculate_rendezvous(ref_polygon_truck, p1[:2], truck_pos[:2])
                 r_point = (r_opt_p1.x, r_opt_p1.y)
                 
-                # --- LOGICA DE VIAJE (COMMUTE) ---
-                full_flight_path = [truck_pos] + current_segment + [r_point]
+                # Add Return Segment (DEADHEADING)
+                commute_return = {'p1': p1, 'p2': r_point, 'spraying': False}
+                current_cycle_segments.append(commute_return)
                 
-                # Guardar ciclo
-                segments.append({
+                # Add Initial Commute (Prepend) - wait, we tracked cost but didn't store segment object?
+                # We need to reconstruct the FULL list of segments for the GUI.
+                # The "current_cycle_segments" currently starts from P_start.
+                # We need to prepend [Truck -> P_cycle_start].
+                
+                # Find P_cycle_start
+                if current_cycle_segments:
+                    p_cyc_start = current_cycle_segments[0]['p1']
+                    commute_in = {'p1': truck_pos, 'p2': p_cyc_start, 'spraying': False}
+                    current_cycle_segments.insert(0, commute_in)
+                    
+                    # Full Path Points
+                    full_path = [truck_pos] + current_cycle_points + [r_point]
+                else:
+                    # Edge case: Can't even do first segment?
+                    full_path = []
+
+                # Save Cycle
+                cycles.append({
                     "type": "work",
-                    "path": full_flight_path, 
+                    "path": full_path,
+                    "segments": current_cycle_segments, # NEW METADATA
                     "truck_start": truck_pos,
                     "truck_end": r_point,
-                    "truck_dist": dist_truck_p1
+                    "truck_dist": dist_truck
                 })
                 
-                # RESET STATE
-                # Iniciamos el siguiente ciclo EN p1 para no perder el tramo p1->p2
-                current_segment = [p1] 
-                truck_pos = r_point 
-                
-                # Asumimos bateria/tanque llenos
+                # RESET & SETUP NEW CYCLE
+                truck_pos = r_point
                 current_liquid = self.tank_capacity
                 current_time_air = 0.0
+                current_cycle_segments = []
+                current_cycle_points = []
                 
-                # IMPORTANTE: Ya que hemos decidido hacer el tramo p1->p2 en el NUEVO ciclo,
-                # debemos descontar su costo ahora mismo.
-                current_liquid -= liq_step
-                current_time_air += time_step
+                # Costo de entrada al nuevo ciclo: Truck -> P1 (donde nos quedamos)
+                dist_commute_in = np.linalg.norm(np.array(truck_pos) - np.array(p1[:2]))
+                time_commute_in = dist_commute_in / self.speed_ms
+                current_time_air += time_commute_in
                 
-                # Opcional: Verificar si incluso con tanque lleno no podemos hacer este paso
-                # (caso de linea inmensamente larga). Por ahora asumimos que cabe.
-
-        # Agregar el ultimo segmento remanente
-        if current_segment:
-             # Calcular punto optimo de recogida final (R_end)
-             p_last = current_segment[-1]
-             
-             r_end, dist_truck_final, time_truck_final = self.station.calculate_rendezvous(ref_polygon_truck, p_last[:2], truck_pos[:2])
+                # NO incrementamos i, reintentamos P1->P2 en el nuevo ciclo
+                
+        # Final Cycle
+        if current_cycle_segments:
+             p_last = current_cycle_segments[-1]['p2']
+             r_end, dist_truck_final, _ = self.station.calculate_rendezvous(ref_polygon_truck, p_last[:2], truck_pos[:2])
              r_end_point = (r_end.x, r_end.y)
              
-             # Agregar trayectos de despegue (desde ult truck pos) y aterrizaje final
-             full_flight_path = [truck_pos] + current_segment + [r_end_point]
-
-             segments.append({
+             # Return Segment
+             commute_return = {'p1': p_last, 'p2': r_end_point, 'spraying': False}
+             current_cycle_segments.append(commute_return)
+             
+             # Prepend Start Commute
+             p_cyc_start = current_cycle_segments[0]['p1']
+             commute_in = {'p1': truck_pos, 'p2': p_cyc_start, 'spraying': False}
+             current_cycle_segments.insert(0, commute_in)
+             
+             # Points
+             current_cycle_points.append(p_last)
+             full_path = [truck_pos] + current_cycle_points + [r_end_point]
+             
+             cycles.append({
                     "type": "work",
-                    "path": full_flight_path,
+                    "path": full_path,
+                    "segments": current_cycle_segments,
                     "truck_start": truck_pos,
                     "truck_end": r_end_point, 
                     "truck_dist": dist_truck_final
              })
              
-        return segments
+        return cycles
