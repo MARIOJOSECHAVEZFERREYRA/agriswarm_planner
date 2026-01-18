@@ -3,6 +3,78 @@ from PyQt6.QtCore import Qt, QPointF, pyqtSignal, QRectF
 from PyQt6.QtGui import QPen, QBrush, QColor, QFont, QPainter, QPolygonF, QWheelEvent, QMouseEvent, QPainterPath
 import math
 
+class MissionMarkerItem(QGraphicsItem):
+    """
+    Marcador personalizado que ignora transformaciones (zoom) para mantener
+    tamaño constante en pixeles, con etiqueta de texto clara.
+    """
+    def __init__(self, x, y, label, color, type="default"):
+        super().__init__()
+        self.setPos(x, y)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+        self.setZValue(100) # Siempre visible
+        
+        self.label = label
+        self.color = QColor(color)
+        self.text_color = QColor("white")
+        
+        # Mapeo de nombres cortos a largos
+        if label == "S": self.full_text = "START"
+        elif label == "E": self.full_text = "END"
+        elif label.startswith("R"): self.full_text = label.replace("R", "R")
+        else: self.full_text = label
+        
+        # Estilos especificos
+        if label == "S": self.color = QColor("#2ecc71") # Green
+        if label == "E": self.color = QColor("#e74c3c") # Red
+        if label.startswith("R"): self.color = QColor("#f39c12") # Orange for truck stops
+
+    def boundingRect(self):
+        # Area de dibujo aproximada (marker + text bubble)
+        return QRectF(-10, -50, 200, 60)
+
+    def paint(self, painter, option, widget):
+        # 1. Dibujar Punto/Pin
+        r = 6
+        painter.setBrush(QBrush(self.color))
+        painter.setPen(QPen(Qt.GlobalColor.white, 2))
+        painter.drawEllipse(QPointF(0, 0), r, r)
+        
+        # 2. Dibujar "Callout" (Burbuja de texto)
+        # Offset en PIXELES (fijo, no depende del zoom)
+        offset_x = 10
+        offset_y = -10
+        
+        font = QFont("Segoe UI", 9, QFont.Weight.Bold)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        
+        text_w = fm.horizontalAdvance(self.full_text)
+        text_h = fm.height()
+        pad = 6
+        
+        # Rectangulo de fondo
+        rect_x = offset_x
+        rect_y = offset_y - text_h - pad
+        rect_w = text_w + (pad * 2)
+        rect_h = text_h + pad
+        
+        # Linea conectora (opcional)
+        # painter.setPen(QPen(self.color, 1))
+        # painter.drawLine(0, 0, rect_x, rect_y + rect_h)
+        
+        # Caja
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect_x, rect_y, rect_w, rect_h), 4, 4)
+        
+        painter.setBrush(QBrush(self.color))
+        painter.setPen(QPen(Qt.GlobalColor.white, 1))
+        painter.drawPath(path)
+        
+        # Texto
+        painter.setPen(self.text_color)
+        painter.drawText(int(rect_x + pad), int(rect_y + text_h - 2), self.full_text)
+
 class MapWidget(QGraphicsView):
     # Señales
     map_clicked = pyqtSignal(float, float)       # Click en vacio (Añadir punto)
@@ -150,7 +222,11 @@ class MapWidget(QGraphicsView):
         
         self.scene.addItem(ellipse)
 
-    def draw_results(self, polygon_geom, safe_geom, path, truck_path):
+    def draw_results(self, polygon_geom, safe_geom, mission_cycles):
+        """
+        Dibuja los resultados de la mision segmentada.
+        :param mission_cycles: Lista de dicts [{'type': 'work', 'path': [], 'truck_path': ...}, ...]
+        """
         self.clear_map()
         
         if polygon_geom:
@@ -175,50 +251,64 @@ class MapWidget(QGraphicsView):
             pen_s.setCosmetic(True)
             self.scene.addPolygon(poly_s, pen_s, QBrush(Qt.BrushStyle.NoBrush)).setZValue(2)
 
-        if path:
+        # Paleta de colores para ciclos
+        colors = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#2c3e50', '#c0392b']
+        
+        cycle_idx = 0
+        for cycle in mission_cycles:
+            path = cycle.get('path', [])
+            truck_path_list = cycle.get('truck_path_coords', []) # Expecting list of coords
+            
+            if not path: continue
+            
+            # 1. Dibujar Ruta Vuelo
+            col = colors[cycle_idx % len(colors)]
+            
             qpath = QPainterPath()
             qpath.moveTo(path[0][0], path[0][1])
             for p in path[1:]:
                 qpath.lineTo(p[0], p[1])
             
-            pen = QPen(QColor('#2980b9'))
+            pen = QPen(QColor(col))
             pen.setWidth(2)
             pen.setCosmetic(True)
             self.scene.addPath(qpath, pen).setZValue(10)
             
-            self.draw_mission_marker(path[0][0], path[0][1], '#2ecc71', "S")
-            self.draw_mission_marker(path[-1][0], path[-1][1], '#e74c3c', "E")
+            # Marcadores de Inicio/Fin de ciclo
+            label_start = "S" if cycle_idx == 0 else f"R{cycle_idx}"
+            label_end = "E" if cycle_idx == len(mission_cycles)-1 else f"R{cycle_idx+1}"
+            
+            # Solo dibujar si no se solapan demasiado o logica especifica
+            # self.draw_mission_marker(path[0][0], path[0][1], col, label_start)
+            # El punto final de un ciclo es el punto de recarga del siguiente usualmente
+            self.draw_mission_marker(path[-1][0], path[-1][1], '#e74c3c', label_end) # Rojo para fin/recarga
 
-        if truck_path:
-            tpath = QPainterPath()
-            tpath.moveTo(truck_path[0][0], truck_path[0][1])
-            for p in truck_path[1:]:
-                tpath.lineTo(p[0], p[1])
-            pen = QPen(QColor('#f39c12'))
-            pen.setStyle(Qt.PenStyle.DashLine)
-            pen.setWidth(2)
-            pen.setCosmetic(True)
-            self.scene.addPath(tpath, pen).setZValue(5)
+            # 2. Dibujar Ruta Camion (si existe para este ciclo)
+            if truck_path_list and len(truck_path_list) > 1:
+                tpath = QPainterPath()
+                tpath.moveTo(truck_path_list[0][0], truck_path_list[0][1])
+                for p in truck_path_list[1:]:
+                    tpath.lineTo(p[0], p[1])
+                
+                pen_t = QPen(QColor('#e67e22'))
+                pen_t.setStyle(Qt.PenStyle.DashLine)
+                pen_t.setWidth(3)
+                pen_t.setCosmetic(True)
+                self.scene.addPath(tpath, pen_t).setZValue(5)
+                
+                # Marcador Truck
+                # self.draw_mission_marker(truck_path_list[0][0], truck_path_list[0][1], '#d35400', "T")
+            
+            cycle_idx += 1
+            
+        # Marcador Inicio Global
+        if mission_cycles and mission_cycles[0].get('path'):
+            p0 = mission_cycles[0]['path'][0]
+            self.draw_mission_marker(p0[0], p0[1], '#2ecc71', "S")
 
     def draw_mission_marker(self, x, y, color, text):
-        r = 8
-        el = QGraphicsEllipseItem(-r, -r, r*2, r*2)
-        el.setBrush(QBrush(QColor(color)))
-        el.setPen(QPen(Qt.GlobalColor.white, 2))
-        el.setPos(x, y)
-        el.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-        el.setZValue(50)
-        self.scene.addItem(el)
-        
-        font = QFont("Arial", 8, QFont.Weight.Bold)
-        t = QGraphicsTextItem(text)
-        t.setFont(font)
-        t.setDefaultTextColor(Qt.GlobalColor.white)
-        # Centrar manualmente la letra
-        t.setPos(x - 4, y - 10) 
-        t.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-        t.setZValue(51)
-        self.scene.addItem(t)
+        item = MissionMarkerItem(x, y, text, color)
+        self.scene.addItem(item)
 
     def draw_labels(self, points):
         if len(points) < 2: return

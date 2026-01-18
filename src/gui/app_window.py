@@ -11,7 +11,7 @@ import datetime
 # Imports Propios
 from drone_db import DroneDB
 from field_io import FieldIO
-from algorithms import MarginReducer, BoustrophedonPlanner, GeneticOptimizer
+from algorithms import MarginReducer, BoustrophedonPlanner, GeneticOptimizer, MobileStation, MissionSegmenter
 # from decomposition import ConcaveDecomposer # Not currently used in app_window based on previous view?
 from geo_utils import GeoUtils
 from gui.map_widget import MapWidget
@@ -196,39 +196,99 @@ class AgriSwarmApp(QMainWindow):
             optimizer = GeneticOptimizer(planner, pop_size=50, generations=30)
             best_angle, self.best_path, self.metrics = optimizer.optimize(campo_seguro)
             
-            px = [p[0] for p in self.best_path]
-            py = [p[1] for p in self.best_path]
-            start = Point(px[0], py[0])
-            end = Point(px[-1], py[-1])
-            road_poly = self.polygon.buffer(5.0, join_style=2)
-            truck_path, self.truck_dist = self.calculate_truck_route(road_poly.exterior, start, end)
+            # --- FASE 2.5: PHYSICS SEGMENTATION ---
+            # Ahora segmentamos la ruta basandonos en fisica (bateria/tanque)
+            mobile_station = MobileStation(truck_speed_mps=5.0) 
+            segmenter = MissionSegmenter(specs, mobile_station, target_rate_l_ha=20.0)
             
-            truck_coords = list(truck_path.coords) if truck_path else []
+            # Check pump first
+            is_pump_ok, pump_msg, req_flow = segmenter.validate_pump()
+            if not is_pump_ok:
+                 QMessageBox.warning(self, "Pump Warning", pump_msg)
+                 # We continue potentially or return? Lets continue but warn.
+            
+            # Usar el poligono del camino (buffer) como referencia para el camion
+            road_poly = self.polygon.buffer(5.0, join_style=2)
+            
+            mission_cycles = segmenter.segment_path(self.polygon, self.best_path, truck_polygon=road_poly)
+            
+            # Calcular distancia total camion sumando todos los ciclos
+            total_truck_dist = sum(c.get('truck_dist', 0) for c in mission_cycles)
+            self.truck_dist = total_truck_dist
+            
+            # Recalcular truck paths para visualizacion (como listas de coordenadas)
+            # El segmenter devuelve truck_start y truck_end, pero no la geometria completa visual.
+            # Necesitamos reconstruirla para que el mapa la dibuje.
+            for cycle in mission_cycles:
+                if cycle.get('truck_dist', 0) > 0:
+                    # Reconstruct visual path using app helper (or better logic inside segmenter, but this works)
+                    ts = Point(cycle['truck_start'])
+                    te = Point(cycle['truck_end'])
+                     # Usamos road_poly (buffer 5m) para el camino del camion
+                    road_poly = self.polygon.buffer(5.0, join_style=2)
+                    t_path, _ = self.calculate_truck_route(road_poly.exterior, ts, te)
+                    if t_path:
+                        cycle['truck_path_coords'] = list(t_path.coords)
 
-            self.map_widget.draw_results(self.polygon, campo_seguro, self.best_path, truck_coords)
+            # Pass full cycles to map widget
+            self.map_widget.draw_results(self.polygon, campo_seguro, mission_cycles)
             
             # GENERAR REPORTE DETALLADO
-            self.generate_report(self.metrics, specs, self.polygon, self.truck_dist)
+            self.generate_report(self.metrics, specs, self.polygon, self.truck_dist, len(mission_cycles))
             self.btn_export.setEnabled(True)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
     def calculate_truck_route(self, ring, p_start, p_end):
-        d_start, d_end = ring.project(p_start), ring.project(p_end)
-        if d_start == d_end: return None, 0
-        p1, p2 = min(d_start, d_end), max(d_start, d_end)
-        dist_A = p2 - p1
-        dist_B = ring.length - dist_A 
-        if dist_A < dist_B:
-            return substring(ring, p1, p2), dist_A
-        else:
-            part1 = substring(ring, p2, ring.length)
-            part2 = substring(ring, 0, p1)
-            coords = list(part1.coords) + list(part2.coords)[1:]
-            return LineString(coords), dist_B
+        """
+        Uses MobileStation to calculate optimal truck path and rendezvous logic.
+        """
+        try:
+             # Instantiate MobileStation (could be member variable if state needed)
+             mobile_station = MobileStation(truck_speed_mps=5.0) 
+             
+             # Convert Shapely Points to tuples
+             p_exit_tuple = (p_end.x, p_end.y)
+             
+             # Assuming truck starts where drone starts (S)
+             truck_start_tuple = (p_start.x, p_start.y)
+             
+             # Use the polygon (reconstruct from ring or use self.polygon)
+             # Note: run_optimization passes road_poly.exterior, so we treat it as the boundary.
+             road_polygon = Polygon(ring)
+             
+             r_opt, dist, time_s = mobile_station.calculate_rendezvous(road_polygon, p_exit_tuple, truck_start_tuple)
+             
+             # Re-calculate the specific path geometry for visualization
+             # MobileStation returns dist, but we want the LineString for the GUI
+             # We repeat the substring logic here or ideally checking if MobileStation can return it.
+             # Current MobileStation returns (r_opt, dist, time). 
+             # Let's use the same logic here to get the path geometry.
+             
+             d_start = ring.project(Point(truck_start_tuple))
+             d_end = ring.project(r_opt)
+             
+             path_direct = substring(ring, min(d_start, d_end), max(d_start, d_end))
+             len_direct = path_direct.length
+             
+             # Check if we chose the direct or inverse path based on 'dist' returned by MobileStation
+             if abs(len_direct - dist) < 1.0:
+                 return path_direct, dist
+             else:
+                 # It was the other way around
+                 total_len = ring.length
+                 # Inverse path
+                 part1 = substring(ring, max(d_start, d_end), total_len)
+                 part2 = substring(ring, 0, min(d_start, d_end))
+                 coords = list(part1.coords) + list(part2.coords)[1:]
+                 return LineString(coords), dist
 
-    def generate_report(self, metrics, specs, campo, truck_dist):
+        except Exception as e:
+            print(f"Error calculating truck route: {e}")
+            return None, 0
+
+    def generate_report(self, metrics, specs, campo, truck_dist, num_cycles=1):
         """Genera un reporte tecnico HTML detallado"""
         
         # 1. Calculos Base
