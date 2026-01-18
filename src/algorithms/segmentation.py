@@ -133,10 +133,21 @@ class MissionSegmenter:
                 })
                 
                 # RESET STATE
-                current_segment = [] 
+                # Iniciamos el siguiente ciclo EN p1 para no perder el tramo p1->p2
+                current_segment = [p1] 
                 truck_pos = r_point 
+                
+                # Asumimos bateria/tanque llenos
                 current_liquid = self.tank_capacity
                 current_time_air = 0.0
+                
+                # IMPORTANTE: Ya que hemos decidido hacer el tramo p1->p2 en el NUEVO ciclo,
+                # debemos descontar su costo ahora mismo.
+                current_liquid -= liq_step
+                current_time_air += time_step
+                
+                # Opcional: Verificar si incluso con tanque lleno no podemos hacer este paso
+                # (caso de linea inmensamente larga). Por ahora asumimos que cabe.
 
         # Agregar el ultimo segmento remanente
         if current_segment:
