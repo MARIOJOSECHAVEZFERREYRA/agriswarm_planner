@@ -62,11 +62,22 @@ class MissionSegmenter:
         line = LineString([p1[:2], p2[:2]])
         mid = line.interpolate(0.5, normalized=True)
         
-        # Relaxed check: Distance to polygon is 0 if inside or on boundary.
-        # buffer(1e-9).contains might be slow.
-        # distance method is robust.
-        dist = polygon.distance(mid)
-        return dist < 0.1 # Tolerance for floating point errors
+        # Strict check for Inside
+        is_inside = polygon.buffer(1e-9).contains(mid)
+        if not is_inside:
+            return False
+            
+        # Heuristic: Turns usually run along the boundary and are short.
+        # We want to mark them as Transit (False) to avoid ugly "block" swaths on turns.
+        length = np.linalg.norm(np.array(p1[:2]) - np.array(p2[:2]))
+        dist_bound = polygon.boundary.distance(mid)
+        
+        # If segment is on/near boundary and short (relative to swath), assume it's a turn.
+        if dist_bound < 1.0 and length < self.swath_width * 2.5:
+            # print(f"DEBUG: Turn detected at {mid}, L={length:.1f}, DistB={dist_bound:.2f} -> Transit")
+            return False
+            
+        return True
 
     def segment_path(self, polygon, raw_path, truck_polygon=None):
         """
@@ -84,7 +95,7 @@ class MissionSegmenter:
         
         # Initial Truck Pos
         p_start = raw_path[0]
-        r_start, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p_start[:2], p_start[:2]) 
+        r_start, _, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p_start[:2], p_start[:2]) 
         truck_pos = (r_start.x, r_start.y)
         
         # Start Cycle Logic
@@ -116,7 +127,7 @@ class MissionSegmenter:
             liq_step = (dist_step * self.liters_per_meter) if is_spray else 0.0
             
             # 2. Predict Return Cost from P2
-            r_opt_p2, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p2[:2], truck_pos[:2])
+            r_opt_p2, _, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p2[:2], truck_pos[:2])
             dist_return = np.linalg.norm(np.array(p2[:2]) - np.array([r_opt_p2.x, r_opt_p2.y]))
             time_return = dist_return / (self.speed_ms * 1.5)
             
@@ -141,7 +152,7 @@ class MissionSegmenter:
                 current_cycle_points.append(p1) # Close loop at P1
                 
                 # Calculate return stats
-                r_opt_p1, dist_truck, _ = self.station.calculate_rendezvous(ref_polygon_truck, p1[:2], truck_pos[:2])
+                r_opt_p1, dist_truck, _, truck_path_list = self.station.calculate_rendezvous(ref_polygon_truck, p1[:2], truck_pos[:2])
                 r_point = (r_opt_p1.x, r_opt_p1.y)
                 
                 # Add Return Segment (DEADHEADING)
@@ -172,7 +183,10 @@ class MissionSegmenter:
                     "segments": current_cycle_segments, # NEW METADATA
                     "truck_start": truck_pos,
                     "truck_end": r_point,
-                    "truck_dist": dist_truck
+                    "truck_start": truck_pos,
+                    "truck_end": r_point,
+                    "truck_dist": dist_truck,
+                    "truck_path_coords": truck_path_list # Store Geometry
                 })
                 
                 # RESET & SETUP NEW CYCLE
@@ -192,7 +206,7 @@ class MissionSegmenter:
         # Final Cycle
         if current_cycle_segments:
              p_last = current_cycle_segments[-1]['p2']
-             r_end, dist_truck_final, _ = self.station.calculate_rendezvous(ref_polygon_truck, p_last[:2], truck_pos[:2])
+             r_end, dist_truck_final, _, truck_path_list_final = self.station.calculate_rendezvous(ref_polygon_truck, p_last[:2], truck_pos[:2])
              r_end_point = (r_end.x, r_end.y)
              
              # Return Segment
@@ -214,7 +228,9 @@ class MissionSegmenter:
                     "segments": current_cycle_segments,
                     "truck_start": truck_pos,
                     "truck_end": r_end_point, 
-                    "truck_dist": dist_truck_final
+                    "truck_end": r_end_point, 
+                    "truck_dist": dist_truck_final,
+                    "truck_path_coords": truck_path_list_final
              })
              
         return cycles

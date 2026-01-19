@@ -1,7 +1,7 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QComboBox, QPushButton, QTextEdit, QMessageBox, 
-                             QFrame, QSizePolicy, QFormLayout, QDoubleSpinBox, QCheckBox)
+                             QFrame, QSizePolicy, QFormLayout, QDoubleSpinBox, QCheckBox, QStackedWidget)
 from PyQt6.QtCore import Qt
 from shapely.geometry import Polygon, Point, LineString
 from shapely.ops import substring
@@ -12,9 +12,11 @@ import datetime
 from drone_db import DroneDB, SpecValue
 from field_io import FieldIO
 from algorithms import MarginReducer, BoustrophedonPlanner, GeneticOptimizer, MobileStation, MissionSegmenter
+from algorithms.analysis import MissionAnalyzer
 # from decomposition import ConcaveDecomposer # Not currently used in app_window based on previous view?
 from geo_utils import GeoUtils
 from gui.map_widget import MapWidget
+from gui.report_panel import ReportPanel
 from gui.styles import *
 
 class AgriSwarmApp(QMainWindow):
@@ -33,6 +35,12 @@ class AgriSwarmApp(QMainWindow):
         self.best_path = None
         self.metrics = None
         self.truck_dist = 0
+        self.last_mission_cycles = None # Mobile by default
+        self.static_cycles = None
+        self.current_specs = None
+        self.safe_polygon = None
+
+
 
         # --- LAYOUT PRINCIPAL ---
         main_widget = QWidget()
@@ -50,13 +58,17 @@ class AgriSwarmApp(QMainWindow):
         self.map_widget.map_right_clicked.connect(self.on_map_right_click)
         self.map_widget.point_moved.connect(self.on_point_moved)
 
-        # 2. BARRA LATERAL (Derecha)
-        sidebar = QWidget()
-        sidebar.setFixedWidth(380) # Un poco mas ancho para el reporte
-        sidebar.setStyleSheet(SIDEBAR_STYLE)
-        layout.addWidget(sidebar)
+        # 2. BARRA LATERAL (Derecha) - Stacked (Control Panel / Report)
+        self.sidebar_stack = QStackedWidget()
+        self.sidebar_stack.setFixedWidth(380)
+        layout.addWidget(self.sidebar_stack)
 
-        side_layout = QVBoxLayout(sidebar)
+        # --- PANEL 0: CONTROLES (Lo que ya teniamos) ---
+        self.control_panel = QWidget()
+        self.control_panel.setStyleSheet(SIDEBAR_STYLE)
+        self.sidebar_stack.addWidget(self.control_panel)
+
+        side_layout = QVBoxLayout(self.control_panel)
         side_layout.setContentsMargins(20, 25, 20, 25)
         side_layout.setSpacing(15)
 
@@ -105,7 +117,17 @@ class AgriSwarmApp(QMainWindow):
         self.spin_flow.setRange(1.0, 40.0)
         self.spin_flow.setSingleStep(0.5)
         self.spin_flow.setSuffix(" L/min")
+        self.spin_flow.setSuffix(" L/min")
         self.params_layout.addRow("Flujo Bomba:", self.spin_flow)
+        
+        # 5. Distancia Estacion (Offset)
+        self.spin_truck_offset = QDoubleSpinBox()
+        self.spin_truck_offset.setRange(0.0, 50.0)
+        self.spin_truck_offset.setSingleStep(1.0)
+        self.spin_truck_offset.setSuffix(" m")
+        self.spin_truck_offset.setValue(0.0)
+        self.spin_truck_offset.setToolTip("Distancia extra entre el borde del campo y la ruta del camion")
+        self.params_layout.addRow("Distancia Estacion:", self.spin_truck_offset)
         
         side_layout.addLayout(self.params_layout)
 
@@ -128,8 +150,16 @@ class AgriSwarmApp(QMainWindow):
         # Opciones Visuales
         self.chk_swath = QCheckBox("Mostrar Cobertura Real (Swath)")
         self.chk_swath.setChecked(True)
-        self.chk_swath.stateChanged.connect(lambda s: self.map_widget.set_swath_visibility(bool(s)))
+        self.chk_swath.stateChanged.connect(self.on_swath_toggled)
         side_layout.addWidget(self.chk_swath)
+        
+        # Toggle para VIsualizacion Estatica vs Movil
+        self.chk_mode_static = QCheckBox("Visualizar: Estación Estática")
+        self.chk_mode_static.setChecked(False)
+        self.chk_mode_static.setEnabled(False) # Solo activo tras caculo
+        self.chk_mode_static.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        self.chk_mode_static.stateChanged.connect(self.toggle_visualization_mode)
+        side_layout.addWidget(self.chk_mode_static)
 
         self.add_separator(side_layout)
 
@@ -140,13 +170,16 @@ class AgriSwarmApp(QMainWindow):
         self.btn_calc.clicked.connect(self.run_optimization)
         side_layout.addWidget(self.btn_calc)
 
-        side_layout.addWidget(QLabel("REPORTE TECNICO"))
-        self.text_report = QTextEdit()
-        self.text_report.setReadOnly(True)
-        # Habilitar HTML
-        self.text_report.setAcceptRichText(True)
-        self.text_report.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        side_layout.addWidget(self.text_report)
+
+        
+        # Boton Reporte Comparativo (Tesis Mode)
+        self.btn_report_window = QPushButton("VER REPORTE COMPARATIVO")
+        self.btn_report_window.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_report_window.setFixedHeight(40)
+        self.btn_report_window.setStyleSheet(f"background-color: {DARK_BLUE}; color: {ACCENT_ORANGE}; font-weight: bold; border: 1px solid {ACCENT_ORANGE}; border-radius: 4px;")
+        self.btn_report_window.clicked.connect(self.show_comparative_report)
+        self.btn_report_window.setEnabled(False) # Habilitar solo tras calculo
+        side_layout.addWidget(self.btn_report_window)
 
         self.btn_export = QPushButton("EXPORTAR .PLAN")
         self.btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -193,7 +226,6 @@ class AgriSwarmApp(QMainWindow):
         self.best_path = None
         self.polygon = None
         self.btn_export.setEnabled(False)
-        self.text_report.clear()
         self.map_widget.clear_map()
 
     def load_field(self):
@@ -203,13 +235,12 @@ class AgriSwarmApp(QMainWindow):
             self.points = list(poly.exterior.coords)[:-1]
             self.best_path = None
             self.map_widget.draw_editor_state(self.points)
-            self.text_report.setText("Campo cargado correctamente.")
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
     def on_drone_changed(self, drone_name):
         self.current_drone = drone_name
-        self.text_report.setText(f"<b>Dron activo:</b> {drone_name}")
+
         
         spec = DroneDB.get_specs(drone_name)
         if spec:
@@ -308,9 +339,11 @@ class AgriSwarmApp(QMainWindow):
             planner = BoustrophedonPlanner(spray_width=override_swath) # Use override
             optimizer = GeneticOptimizer(planner, pop_size=50, generations=30)
             best_angle, self.best_path, self.metrics = optimizer.optimize(campo_seguro)
+            self.safe_polygon = campo_seguro # Store for visualization toggle
             
             # --- FASE 2.5: PHYSICS SEGMENTATION ---
-            mobile_station = MobileStation(truck_speed_mps=5.0) 
+            truck_offset = self.spin_truck_offset.value()
+            mobile_station = MobileStation(truck_speed_mps=5.0, truck_offset_m=truck_offset) 
             
             # Update segmenter to use override target rate if we had one (we only expose swath/tank/flow/speed)
             # Assuming target_rate is fixed or we should add it? 
@@ -339,7 +372,25 @@ class AgriSwarmApp(QMainWindow):
             for cycle in mission_cycles:
                 cycle['swath_width'] = override_swath
 
-            # ... continue ...
+            # --- STORE FOR REPORTING & TOGGLE ---
+            self.last_mission_cycles = mission_cycles
+            self.current_specs = specs # Store modified specs
+            
+            # Pre-calcular Escenario Estatico (Baseline) para Toggle
+            self.static_cycles, _ = MissionAnalyzer.simulate_static_mission(
+                MissionSegmenter, 
+                self.polygon, 
+                self.best_path, 
+                self.current_specs, 
+                MobileStation
+            )
+            # Inject Swath for Static too
+            for sc in self.static_cycles: sc['swath_width'] = override_swath
+            
+            self.chk_mode_static.setEnabled(True)
+            self.chk_mode_static.setChecked(False) # Reset to mobile
+            self.btn_report_window.setEnabled(True)
+
             total_truck_dist = sum(c.get('truck_dist', 0) for c in mission_cycles)
             self.truck_dist = total_truck_dist
             
@@ -361,7 +412,7 @@ class AgriSwarmApp(QMainWindow):
             self.map_widget.draw_results(self.polygon, campo_seguro, mission_cycles)
             
             # GENERAR REPORTE DETALLADO
-            self.generate_report(self.metrics, specs, self.polygon, self.truck_dist, len(mission_cycles))
+
             self.btn_export.setEnabled(True)
 
         except Exception as e:
@@ -385,7 +436,7 @@ class AgriSwarmApp(QMainWindow):
              # Note: run_optimization passes road_poly.exterior, so we treat it as the boundary.
              road_polygon = Polygon(ring)
              
-             r_opt, dist, time_s = mobile_station.calculate_rendezvous(road_polygon, p_exit_tuple, truck_start_tuple)
+             r_opt, dist, time_s, _ = mobile_station.calculate_rendezvous(road_polygon, p_exit_tuple, truck_start_tuple)
              
              # Re-calculate the specific path geometry for visualization
              # MobileStation returns dist, but we want the LineString for the GUI
@@ -516,7 +567,80 @@ class AgriSwarmApp(QMainWindow):
         if not self.best_path: return
         try:
             filename = "mision_agriswarm.plan"
-            GeoUtils.export_qgc_mission(self.best_path, filename)
-            QMessageBox.information(self, "OK", f"Mision exportada:\n{filename}")
+            self.export_status_label.setText(f"Exportado: {filename}")
+            QMessageBox.information(self, "Exportar", f"Misión guardada en:\n{filename}")
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+        
+    def show_comparative_report(self):
+        """Genera y muestra el reporte de Tesis en el sidebar"""
+        if not self.last_mission_cycles or not self.current_specs or not self.static_cycles:
+            return
+            
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            # 1. Usar Mision Estatica Pre-calculada (Baseline)
+            static_cycles = self.static_cycles
+            
+            # 2. Comparar
+            comparison = MissionAnalyzer.compare_missions(self.last_mission_cycles, static_cycles)
+            
+            # 3. Plan Logistico (Recursos)
+            resources = MissionAnalyzer.plan_logistics(self.last_mission_cycles, self.current_specs)
+            
+            # 4. Metricas Completas (Resumen Ejecutivo)
+            comprehensive = MissionAnalyzer.calculate_comprehensive_metrics(
+                self.last_mission_cycles, 
+                self.polygon, 
+                self.current_specs
+            )
+           
+            QApplication.restoreOverrideCursor()
+            
+            # 5. Crear Panel de Reporte
+            # Verificar si ya existe un panel de reporte previo en indice 1 y borrarlo?
+            if self.sidebar_stack.count() > 1:
+                old = self.sidebar_stack.widget(1)
+                self.sidebar_stack.removeWidget(old)
+                old.deleteLater()
+                
+            report_panel = ReportPanel(comprehensive, comparison, resources)
+            report_panel.back_clicked.connect(self.show_control_panel)
+            
+            self.sidebar_stack.addWidget(report_panel)
+            self.sidebar_stack.setCurrentIndex(1)
+            
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Error Reporte", str(e))
+            
+    def on_swath_toggled(self, state):
+        visible = bool(state)
+        # Update widget state
+        self.map_widget.show_swath = visible
+        
+        if self.best_path and (self.last_mission_cycles or self.static_cycles):
+             # Mode Mission: Redraw Results
+             use_static = self.chk_mode_static.isChecked()
+             cycles_to_draw = self.static_cycles if use_static else self.last_mission_cycles
+             
+             if cycles_to_draw:
+                self.map_widget.draw_results(self.polygon, self.safe_polygon, cycles_to_draw, is_static=use_static)
+        else:
+             # Mode Editor: Redraw Editor Points
+             self.map_widget.draw_editor_state(self.points)
+
+    def toggle_visualization_mode(self, state):
+        """Switches between Mobile (Optimizer) and Static (Baseline) visualization"""
+        if not self.last_mission_cycles or not self.static_cycles:
+            return
+            
+        use_static = bool(state)
+        cycles_to_draw = self.static_cycles if use_static else self.last_mission_cycles
+        
+        # Redraw
+        if self.polygon and self.safe_polygon:
+            self.map_widget.draw_results(self.polygon, self.safe_polygon, cycles_to_draw, is_static=use_static)
+
+    def show_control_panel(self):
+        self.sidebar_stack.setCurrentIndex(0)

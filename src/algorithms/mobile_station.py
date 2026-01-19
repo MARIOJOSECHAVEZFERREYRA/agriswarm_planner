@@ -8,63 +8,69 @@ class MobileStation:
     Basado en la restriccion geometrica: P_truck en el borde del poligono.
     """
 
-    def __init__(self, truck_speed_mps=5.0):
-        self.truck_speed = truck_speed_mps # Velocidad media del camion (ej. 18 km/h = 5 m/s)
+    def __init__(self, truck_speed_mps=5.0, truck_offset_m=0.0):
+        self.truck_speed = truck_speed_mps # Velocidad media del camion
+        self.truck_offset_m = truck_offset_m # Distancia del ruta al borde
 
     def calculate_rendezvous(self, polygon: Polygon, p_drone_exit: tuple, truck_start_pos: tuple):
         """
-        Calcula el punto de encuentro optimo (R_opt) y la logistica de sincronizacion.
-        
-        :param polygon: Poligono del campo (el borde es el camino del camion).
-        :param p_drone_exit: (x,y) donde el dron termina su mistion o necesita recarga.
-        :param truck_start_pos: (x,y) posicion actual del camion.
-        :return: (r_opt_point, truck_path, arrival_time_s, is_reachable)
+        Calcula el punto de encuentro optimo (R_opt) y la logistica.
         """
-        boundary = polygon.exterior
+        # Determine the truck path boundary (optionally offset from field edge)
+        if self.truck_offset_m > 0:
+            # Buffer expands polygon (positive offset = outside if polygon is CCW and "buffer" logic holds for standard field)
+            # Use mitre join (2) to preserve corner shape roughly
+            limit_poly = polygon.buffer(self.truck_offset_m, join_style=2)
+            boundary = limit_poly.exterior
+        else:
+            boundary = polygon.exterior
         
         # 1. Encontrar R_opt (Proyeccion ortogonal sobre el borde)
-        # Esto minimiza la distancia Dron->Camion segun la funcion de costo simple.
         point_exit = Point(p_drone_exit)
         dist_projected = boundary.project(point_exit)
         r_opt = boundary.interpolate(dist_projected)
         
         # 2. Calcular ruta del Camion sobre el perimetro
-        # El camion debe ir de truck_start_pos a r_opt sobre el anillo.
-        # Un anillo es cerrado, asi que hay dos caminos. Elegimos el mas corto.
-        
         start_dist = boundary.project(Point(truck_start_pos))
-        target_dist = dist_projected # Ya lo tenemos
+        target_dist = dist_projected 
+        total_len = boundary.length
         
-        # Caso A: Ruta directa
-        # Ordenamos las distancias para substring
-        d_min, d_max = min(start_dist, target_dist), max(start_dist, target_dist)
-        
-        path_a = substring(boundary, d_min, d_max)
-        len_a = path_a.length
-        
-        # Caso B: Ruta inversa (cruzando el start/end del anillo)
-        len_total = boundary.length
-        len_b = len_total - len_a
-        
-        # Determinar cual es el camino REAL que conecta start->target
-        # Substring siempre va en direccion del anillo.
-        # Si start < target: substring(start, target) es directo (CCW si anillo estandar)
-        # Si start > target: substring(start, target) no es posible directo con d_min/d_max normal,
-        # hay que componerlo.
-        
-        # Simplificacion robusta:
-        # El camion va por el camino mas corto.
-        if len_a <= len_b:
-            truck_travel_dist = len_a
-            # Reconstruir geometria exacta no es necesario para el calculo de tiempo,
-            # pero si visualizamos, podriamos quererla. Por ahora basta la distancia.
+        # Path 1: CCW (Adelante en el anillo)
+        if start_dist <= target_dist:
+            path_ccw_geom = substring(boundary, start_dist, target_dist)
         else:
-            truck_travel_dist = len_b
+            # Wrap: start->end + 0->target
+            p1 = substring(boundary, start_dist, total_len)
+            p2 = substring(boundary, 0, target_dist)
+            coords = list(p1.coords) + list(p2.coords)
+            path_ccw_geom = LineString(coords)
+            
+        len_ccw = path_ccw_geom.length
+        
+        # Path 2: CW (Atras en el anillo) -> Calculamos Target->Start (CCW) y lo invertimos
+        if target_dist <= start_dist:
+            path_cw_rev = substring(boundary, target_dist, start_dist)
+        else:
+            p1 = substring(boundary, target_dist, total_len)
+            p2 = substring(boundary, 0, start_dist)
+            coords = list(p1.coords) + list(p2.coords)
+            path_cw_rev = LineString(coords)
+            
+        len_cw = path_cw_rev.length
+        
+        # Elegir el mas corto
+        if len_ccw <= len_cw:
+            truck_travel_dist = len_ccw
+            path_final_coords = list(path_ccw_geom.coords)
+        else:
+            truck_travel_dist = len_cw
+            # Invertir coordenadas para ir Start->Target
+            path_final_coords = list(path_cw_rev.coords)[::-1]
 
         # 3. Sincronizacion
         truck_time_s = truck_travel_dist / self.truck_speed if self.truck_speed > 0 else float('inf')
         
-        return r_opt, truck_travel_dist, truck_time_s
+        return r_opt, truck_travel_dist, truck_time_s, path_final_coords
 
     def check_feasibility(self, truck_time_s, drone_endurance_s):
         """

@@ -27,4 +27,11 @@ def main():
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        with open("crash.log", "w") as f:
+            f.write(traceback.format_exc())
+            f.write(str(e))
+        print(f"CRASH: {e}")

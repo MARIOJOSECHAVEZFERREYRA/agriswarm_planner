@@ -49,15 +49,20 @@ class ConcaveDecomposer:
                         # print(f"⚠️ Split failed to produce sub-polygons at depth {depth}. Skipping this vertex.")
                         continue 
                         
-                    # Llamada recursiva: intentar descomponer las partes resultantes
+                    # Verificación de calidad del corte
+                    is_trivial = False
+                    for sub in sub_polygons:
+                        # Reject if split produces a tiny sliver (< 10 m^2) or fails to reduce area significantly (> 99.9%)
+                        if sub.area < 10.0 or sub.area > 0.999 * polygon.area:
+                            is_trivial = True
+                            break
+                    
+                    if is_trivial:
+                        continue # Intentar otro vértice
+                        
+                    # Recurse on valid split
                     result = []
                     for sub in sub_polygons:
-                        # Ensure we are passing valid polygons and not everything again
-                        # Check area to ensure we are not processing the same full polygon
-                        if sub.area > 0.99 * polygon.area:
-                             # print("⚠️ Sub-polygon area too similar to parent. Recursion danger.")
-                             pass
-                             
                         result.extend(ConcaveDecomposer.decompose(sub, heading_angle_deg, depth + 1))
                     return result
 
@@ -88,7 +93,7 @@ class ConcaveDecomposer:
         
         # En Shapely/GIS (orden CCW), un cross negativo indica un giro a la derecha (concavidad)
         # NOTA: Asumimos que el polígono está ordenado CCW (Counter-Clockwise).
-        return cross_prod < -1e-10  # Un pequeño epsilon para evitar ruido numérico
+        return cross_prod < -1e-3  # Tolerancia aumentada para evitar ruido en vertices casi colineales
 
     @staticmethod
     def _is_type_2(coords, i, heading_rad):

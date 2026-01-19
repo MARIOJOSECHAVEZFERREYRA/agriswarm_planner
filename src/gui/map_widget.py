@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsRectItem
+from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsRectItem, QGraphicsSimpleTextItem, QGraphicsItemGroup, QGraphicsPolygonItem
 from PyQt6.QtCore import Qt, QPointF, pyqtSignal, QRectF
 from PyQt6.QtGui import QPen, QBrush, QColor, QFont, QPainter, QPolygonF, QWheelEvent, QMouseEvent, QPainterPath
 import math
@@ -83,6 +83,15 @@ class MapWidget(QGraphicsView):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.parent_app = parent
+        
+        # Estado
+        self.original_polygon = None
+        self.truck_path_coords = []     # Lista de coords de la camioneta
+        self.mission_cycles = None      # Lista de ciclos (path + color + markers)
+        self.recharge_markers = []      # Lista de dicts {lat, lon, label}
+        self.swath_polygons = []        # Lista de poligonos de cobertura
+        self.show_swath = True          # Visibility toggle
         self.scene = QGraphicsScene(self)
         self.scene.setSceneRect(-100000, -100000, 200000, 200000)
         self.setScene(self.scene)
@@ -97,6 +106,12 @@ class MapWidget(QGraphicsView):
         self.setBackgroundBrush(QBrush(QColor("#ffffff")))
         
         self.scale(10, -10)
+        
+        # Mouse Tracking for Hover Labels
+        self.setMouseTracking(True)
+        self.hover_group = None
+        self.hover_text = None
+        self.hover_bg = None
         
         # Estado de arrastre interno
         self.dragging_point_index = None
@@ -187,6 +202,17 @@ class MapWidget(QGraphicsView):
 
     def clear_map(self):
         self.scene.clear()
+        self.hover_group = None
+        self.hover_text = None
+        self.hover_bg = None
+        
+        # Reset Geometries to prevent Ghost Hover detection
+        self.last_polygon_geom = None
+        self.last_safe_geom = None
+        self.mission_cycles = None 
+        
+        # Cache for overlapping labels
+        self.label_cache = {}
 
     def draw_editor_state(self, points):
         """Dibuja polígono editable"""
@@ -238,10 +264,11 @@ class MapWidget(QGraphicsView):
         
         self.scene.addItem(ellipse)
 
-    def draw_results(self, polygon_geom, safe_geom, mission_cycles):
+    def draw_results(self, polygon_geom, safe_geom, mission_cycles, is_static=False):
         """
         Dibuja los resultados de la mision segmentada.
         :param mission_cycles: Lista de dicts [{'type': 'work', 'path': [], 'truck_path': ...}, ...]
+        :param is_static: Boolean, si es True activamos visualizaciones especificas (labels de retorno).
         """
 
         self.last_polygon_geom = polygon_geom
@@ -258,6 +285,7 @@ class MapWidget(QGraphicsView):
             pen.setCosmetic(True)
             self.scene.addPolygon(poly_q, pen, brush).setZValue(0)
             
+            # 3. Etiquetas Permanentes (Restaurado)
             self.draw_labels(list(polygon_geom.exterior.coords)[:-1])
             
             centroid = polygon_geom.centroid
@@ -301,16 +329,24 @@ class MapWidget(QGraphicsView):
                     # Mejor: Si es spraying -> Buffer + Linea fina centro
                     # Si no es spraying -> Solo Linea fina (o punteada?)
                     
+                    pen_seg = QPen(QColor(col))
+                    
                     # 1. Linea base
                     qseg = QPainterPath()
                     qseg.moveTo(p1[0], p1[1])
                     qseg.lineTo(p2[0], p2[1])
                     
-                    pen_seg = QPen(QColor(col))
-                    pen_seg.setWidth(2 if is_spraying else 1) # Un poco mas fino si es transito
-                    pen_seg.setStyle(Qt.PenStyle.SolidLine if is_spraying else Qt.PenStyle.DotLine) # Punteado si no fumiga?
-                    # El usuario pidio "LineString delgada". SolidLine fina esta bien.
-                    pen_seg.setStyle(Qt.PenStyle.SolidLine) 
+                    if is_spraying:
+                        pen_seg.setWidth(2)
+                        pen_seg.setStyle(Qt.PenStyle.SolidLine)
+                    else:
+                        # Transit: Dashed + ARROWS
+                        pen_seg.setStyle(Qt.PenStyle.DashLine)
+                        pen_seg.setWidth(2)
+                        
+                        # Draw Arrow to show direction
+                        self.draw_arrow(p1, p2, col)
+
                     pen_seg.setCosmetic(True)
                     self.scene.addPath(qseg, pen_seg).setZValue(10)
                     
@@ -331,6 +367,14 @@ class MapWidget(QGraphicsView):
                              brush = QBrush(c)
                              pen_b = QPen(Qt.PenStyle.NoPen)
                              self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
+
+                    # 3. STATIC MODE: Label Return Segments (Non-Spraying)
+                    if is_static and not is_spraying:
+                        d_seg = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
+                        if d_seg > 10.0: # Only significant return paths
+                            mx = (p1[0] + p2[0]) / 2
+                            my = (p1[1] + p2[1]) / 2
+                            self.draw_floating_label(mx, my, f"{d_seg:.0f} m")
 
             else:
                 # FALLBACK (Codigo Viejo)
@@ -429,6 +473,8 @@ class MapWidget(QGraphicsView):
                 pen_t.setCosmetic(True)
                 self.scene.addPath(tpath, pen_t).setZValue(5 + overlap_count) # Poner encima las nuevas capas
             
+
+
             cycle_idx += 1
             
         # Marcador Inicio Global
@@ -440,8 +486,65 @@ class MapWidget(QGraphicsView):
         item = MissionMarkerItem(x, y, text, color)
         self.scene.addItem(item)
 
+    def draw_arrow(self, p1, p2, color):
+        """Dibuja una flecha en el punto medio del segmento para indicar direccion (Unidades de Mapa)."""
+        mx = (p1[0] + p2[0]) / 2
+        my = (p1[1] + p2[1]) / 2
+        
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        length = math.sqrt(dx*dx + dy*dy)
+        if length < 15.0: return # Don't draw arrows on short segments
+
+        angle = math.atan2(dy, dx)
+        
+        # Geometry in PIXELS (Fixed Screen Size)
+        psize = 12
+        
+        # Position Logic (Relative):
+        # Place arrow at 60% of the segment (Slightly forward).
+        # This resolves overlap (0.6 vs 0.4) without pushing it to the ends.
+        t = 0.60
+            
+        mx = p1[0] + dx * t
+        my = p1[1] + dy * t
+        
+        # Triangle pointing Right (+X), Centered on Centroid (0,0)
+        # Shifted coords to align visual center with pivot
+        head_px = QPolygonF([
+            QPointF(-4, -4),
+            QPointF(8, 0),
+            QPointF(-4, 4)
+        ])
+        
+        arrow_item = QGraphicsPolygonItem(head_px)
+        arrow_item.setBrush(QBrush(QColor(color)))
+        arrow_item.setPen(QPen(Qt.PenStyle.NoPen))
+        
+        # Transform 
+        # 1. Rotation (Degrees)
+        # NOTE: View uses scale(10, -10) (Y-flip). 
+        # Screen Y is Down, Scene Y is Up. 
+        # Scene Angle +45 (Up-Right) -> Screen Angle -45 (Up-Right).
+        # Must NEGATE the angle for ItemIgnoresTransformations items.
+        arrow_item.setRotation(-math.degrees(angle))
+        
+        # 2. Position (Scene Coords)
+        arrow_item.setPos(mx, my)
+        
+        # 3. Ignore Zoom (Constant Pixel Size)
+        arrow_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+        
+        arrow_item.setZValue(12) 
+        self.scene.addItem(arrow_item)
+
     def draw_labels(self, points):
         if len(points) < 2: return
+        
+        # Calc Centroid
+        cx = sum(p[0] for p in points) / len(points)
+        cy = sum(p[1] for p in points) / len(points)
+        
         for i in range(len(points)):
             p1 = points[i]
             p2 = points[0] if i == len(points)-1 else points[i+1]
@@ -450,9 +553,82 @@ class MapWidget(QGraphicsView):
             mid_x = (p1[0] + p2[0]) / 2
             mid_y = (p1[1] + p2[1]) / 2
             
-            self.draw_floating_label(mid_x, mid_y, f"{dist:.1f} m")
+            # Vector Edge
+            vx = p2[0] - p1[0]
+            vy = p2[1] - p1[1]
+            
+            # Normal (rotate 90 deg)
+            nx = -vy
+            ny = vx
+            
+            # Check direction relative to centroid
+            # Vector Centroid -> Midpoint
+            v_cm_x = mid_x - cx
+            v_cm_y = mid_y - cy
+            
+            # Dot Product
+            dot = nx * v_cm_x + ny * v_cm_y
+            
+            if dot < 0:
+                nx = -nx
+                ny = -ny
+            
+            angle = math.atan2(ny, nx)
+            
+            self.draw_floating_label(mid_x, mid_y, f"{dist:.1f} m", angle=angle)
 
-    def draw_floating_label(self, x, y, text, is_area=False):
+    def draw_cycle_label(self, x, y, text):
+        """Dibuja una etiqueta pequeña para el ciclo (C1, C2...)"""
+        # Convert newlines to breaks
+        html_text = text.replace('\n', '<br>')
+        
+        qtext = QGraphicsTextItem()
+        font = QFont("Arial", 10, QFont.Weight.Bold)
+        qtext.setFont(font)
+        
+        # Centering via HTML
+        qtext.setHtml(f"<div style='text-align: center;'>{html_text}</div>")
+        
+        # Center item on origin
+        rect = qtext.boundingRect()
+        rect_center_off_x = -rect.width() / 2
+        rect_center_off_y = -rect.height() / 2
+        qtext.setPos(rect_center_off_x, rect_center_off_y)
+        
+        # Background
+        bg = QGraphicsRectItem(rect)
+        bg.setBrush(QBrush(QColor(255, 255, 255, 200))) 
+        bg.setPen(QPen(Qt.PenStyle.NoPen))
+        bg.setPos(rect_center_off_x, rect_center_off_y)
+        
+        group = QGraphicsItemGroup()
+        group.addToGroup(bg)
+        group.addToGroup(qtext)
+        
+        group.setPos(x, y) # Position at centroid
+        group.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations) # Scale independent
+        group.setZValue(20) # Top
+        self.scene.addItem(group)
+
+    def draw_floating_label(self, x, y, text, is_area=False, angle=None):
+        # Check cache for overlaps (only for distance labels, to show x2)
+        if not is_area:
+             key = (round(x, 1), round(y, 1))
+             if hasattr(self, 'label_cache') and key in self.label_cache:
+                 existing_t, orig_text = self.label_cache[key]
+                 if text == orig_text:
+                     # Merge and update existing label
+                     new_text = f"{text} (x2)"
+                     
+                     border_col = "#bdc3c7"
+                     bg_col = "rgba(255, 255, 255, 0.9)"
+                     existing_t.setHtml(f"<div style='background-color: {bg_col}; border: 1px solid {border_col}; padding: 2px 4px; border-radius: 4px;'>{new_text}</div>")
+                     
+                     # Re-center (size changed)
+                     rect = existing_t.boundingRect()
+                     existing_t.setPos(-rect.width()/2, -rect.height()/2)
+                     return
+
         t = QGraphicsTextItem(text)
         font = QFont("Segoe UI", 10 if is_area else 9, QFont.Weight.Bold)
         t.setFont(font)
@@ -467,16 +643,151 @@ class MapWidget(QGraphicsView):
         
         t.setHtml(f"<div style='background-color: {bg_col}; border: 1px solid {border_col}; padding: 2px 4px; border-radius: 4px;'>{text}</div>")
         
-        t.setPos(x, y)
-        t.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-        t.setZValue(200) # ¡MUY ALTO PARA VERSE SIEMPRE!
-        self.scene.addItem(t)
+        # Center the text item on its origin 0,0
+        rect = t.boundingRect()
+        t.setPos(-rect.width()/2, -rect.height()/2)
+
+        # Cache it
+        if not is_area and hasattr(self, 'label_cache'):
+            self.label_cache[key] = (t, text)
+
+        # Container Group
+        group = QGraphicsItemGroup()
+        group.addToGroup(t)
+        
+        group.setPos(x, y)
+        group.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+        group.setZValue(20)
+        
+        if angle is not None:
+            # Offset in pixels
+            offset = 45 # Aumentado para mayor separación
+            dx = offset * math.cos(angle)
+            dy = -offset * math.sin(angle) # Negate Y because View is Y-flipped (Scene Up = Screen Y-)
+            # Apply offset to text item inside the scale-invariant group
+            t.setPos(t.x() + dx, t.y() + dy)
+        
+        self.scene.addItem(group)
+        
+
+
 
     # --- EVENTOS ---
     def wheelEvent(self, event: QWheelEvent):
         factor = 1.2
         if event.angleDelta().y() > 0: self.scale(factor, factor)
         else: self.scale(1/factor, 1/factor)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        super().mouseMoveEvent(event)
+        
+        # 1. Logic for Dragging Points (Priority)
+        if self.dragging_point_index is not None:
+            scene_pos = self.mapToScene(event.pos())
+            self.point_moved.emit(self.dragging_point_index, scene_pos.x(), scene_pos.y())
+            return # Skip hover if dragging
+
+        if not self.last_polygon_geom:
+            return
+
+        scene_pos = self.mapToScene(event.pos())
+        p_mouse = (scene_pos.x(), scene_pos.y())
+        
+        min_dist = float('inf')
+        closest_edge = None # (p1, p2, dist_len, angle)
+        
+        coords = list(self.last_polygon_geom.exterior.coords)
+        if len(coords) < 2: return
+        
+        for i in range(len(coords)-1):
+            p1 = coords[i]
+            p2 = coords[i+1]
+            
+            # Distance Point to Segment
+            px, py = p2[0]-p1[0], p2[1]-p1[1]
+            norm = px*px + py*py
+            if norm == 0: continue
+            
+            u = ((p_mouse[0] - p1[0]) * px + (p_mouse[1] - p1[1]) * py) / norm
+            u = max(min(u, 1), 0)
+            
+            x = p1[0] + u * px
+            y = p1[1] + u * py
+            
+            dx = x - p_mouse[0]
+            dy = y - p_mouse[1]
+            dist = math.sqrt(dx*dx + dy*dy)
+            
+            if dist < min_dist:
+                min_dist = dist
+                edge_len = math.sqrt(norm)
+                
+                # Outward Angle Calc
+                mx, my = (p1[0]+p2[0])/2, (p1[1]+p2[1])/2
+                cx, cy = self.last_polygon_geom.centroid.x, self.last_polygon_geom.centroid.y
+                vx, vy = p2[0]-p1[0], p2[1]-p1[1]
+                nx, ny = -vy, vx
+                if nx*(mx-cx) + ny*(my-cy) < 0: nx, ny = -nx, -ny
+                angle = math.atan2(ny, nx)
+                
+                closest_edge = ((mx, my), edge_len, angle)
+
+        threshold = 5.0 # meters
+        
+        if min_dist < threshold and closest_edge:
+            mid, length, ang = closest_edge
+            text = f"{length:.1f} m"
+            self.update_hover_label(mid[0], mid[1], text, ang)
+        else:
+            if self.hover_group: self.hover_group.setVisible(False)
+
+    def update_hover_label(self, x, y, text, angle):
+        if not self.hover_group:
+            self.hover_text = QGraphicsSimpleTextItem()
+            self.hover_text.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+            self.hover_bg = QGraphicsRectItem()
+            self.hover_bg.setBrush(QBrush(QColor(255, 255, 255, 220)))
+            self.hover_bg.setPen(QPen(Qt.PenStyle.NoPen))
+            
+            self.hover_group = QGraphicsItemGroup()
+            self.hover_group.addToGroup(self.hover_bg)
+            self.hover_group.addToGroup(self.hover_text)
+            self.hover_group.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+            self.hover_group.setZValue(200)
+            self.scene.addItem(self.hover_group)
+            
+        self.hover_group.setVisible(True)
+        self.hover_text.setText(text)
+        
+        # Layout
+        r = self.hover_text.boundingRect()
+        pad = 4
+        self.hover_bg.setRect(r.x()-pad, r.y()-pad, r.width()+2*pad, r.height()+2*pad)
+        
+        # Center in Group
+        off_x = -r.width()/2
+        off_y = -r.height()/2
+        self.hover_text.setPos(off_x, off_y)
+        self.hover_bg.setPos(off_x, off_y)
+        
+        # Position with Angle Offset
+        offset_px = 25
+        dx = offset_px * math.cos(angle)
+        dy = offset_px * math.sin(angle)
+        
+        # Since group ignores transform, x/y are scene pos, but internal matrix is pixels.
+        # So we can't just add dx to x? 
+        # Actually ItemIgnoresTransformations anchors the item at pos() in scene, 
+        # and draws it with identity transform (pixels) at that point.
+        # But if we want the TEXT to be offset by pixels, we move the item (or group) contents?
+        # NO. We move the group anchor? No, group anchor is scene coord.
+        # We must add pixel offset to the child items!
+        
+        # Reset local pos to center
+        self.hover_text.setPos(off_x + dx, off_y + dy)
+        self.hover_bg.setPos(off_x + dx, off_y + dy)
+        
+        self.hover_group.setPos(x, y)
 
     def mousePressEvent(self, event: QMouseEvent):
         # 1. Detectar si hicimos click en un PUNTO existente
@@ -499,12 +810,7 @@ class MapWidget(QGraphicsView):
         elif event.button() == Qt.MouseButton.RightButton:
             self.map_right_clicked.emit(scene_pos.x(), scene_pos.y())
 
-    def mouseMoveEvent(self, event: QMouseEvent):
-        super().mouseMoveEvent(event)
-        # Si estamos arrastrando un punto, emitir la señal para actualizar geometria
-        if self.dragging_point_index is not None:
-            scene_pos = self.mapToScene(event.pos())
-            self.point_moved.emit(self.dragging_point_index, scene_pos.x(), scene_pos.y())
+
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         super().mouseReleaseEvent(event)
