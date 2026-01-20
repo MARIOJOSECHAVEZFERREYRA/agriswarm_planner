@@ -1,7 +1,8 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QComboBox, QPushButton, QTextEdit, QMessageBox, 
-                             QFrame, QSizePolicy, QFormLayout, QDoubleSpinBox, QCheckBox, QStackedWidget)
+                             QFrame, QSizePolicy, QFormLayout, QDoubleSpinBox, QCheckBox, 
+                             QStackedWidget, QFileDialog)
 from PyQt6.QtCore import Qt
 from shapely.geometry import Polygon, Point, LineString
 from shapely.ops import substring
@@ -80,7 +81,6 @@ class AgriSwarmApp(QMainWindow):
 
         self.add_separator(side_layout)
 
-        side_layout.addWidget(QLabel("AERONAVE"))
         self.combo_drones = QComboBox()
         self.combo_drones.addItems(DroneDB.get_drone_names())
         self.combo_drones.setCurrentText("DJI Agras T30")
@@ -127,11 +127,12 @@ class AgriSwarmApp(QMainWindow):
         self.spin_truck_offset.setSuffix(" m")
         self.spin_truck_offset.setValue(0.0)
         self.spin_truck_offset.setToolTip("Distancia extra entre el borde del campo y la ruta del camion")
+        self.spin_truck_offset.valueChanged.connect(self.on_truck_offset_changed)
         self.params_layout.addRow("Distancia Estacion:", self.spin_truck_offset)
         
         side_layout.addLayout(self.params_layout)
 
-        side_layout.addWidget(QLabel("GEOMETRIA"))
+        # side_layout.addWidget(QLabel("GEOMETRIA")) - Removed by user request
         btn_grid = QHBoxLayout()
         self.btn_clear = QPushButton("BORRAR")
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -146,6 +147,14 @@ class AgriSwarmApp(QMainWindow):
         btn_grid.addWidget(self.btn_clear)
         btn_grid.addWidget(self.btn_load)
         side_layout.addLayout(btn_grid)
+        
+        # Boton para Ruta Personalizada
+        self.btn_draw_route = QPushButton("DIBUJAR RUTA MOVIL")
+        self.btn_draw_route.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_draw_route.setStyleSheet("background-color: #7f8c8d; color: white; border: none; padding: 10px; font-weight: bold; border-radius: 4px;")
+        self.btn_draw_route.setCheckable(True)
+        self.btn_draw_route.clicked.connect(self.toggle_draw_route)
+        side_layout.addWidget(self.btn_draw_route)
         
         # Opciones Visuales
         self.chk_swath = QCheckBox("Mostrar Cobertura Real (Swath)")
@@ -195,6 +204,35 @@ class AgriSwarmApp(QMainWindow):
         # Force initial populate (Now that UI is ready)
         self.on_drone_changed(self.combo_drones.currentText())
 
+    def update_ui_state(self):
+        """Enable/Disable controls based on current state (Field Loaded, Drawing, etc)"""
+        has_field = self.polygon is not None
+        is_drawing = self.btn_draw_route.isChecked()
+        has_results = self.best_path is not None
+        
+        # 1. Controls dependent on Field
+        self.btn_draw_route.setEnabled(has_field)
+        # Offset is only useful if we have a field. 
+        self.spin_truck_offset.setEnabled(has_field)
+        
+        # Calc needs field and NOT be drawing
+        self.btn_calc.setEnabled(has_field and not is_drawing)
+        # Clear/Load available if not drawing
+        self.btn_clear.setEnabled(has_field and not is_drawing)
+        self.btn_load.setEnabled(not is_drawing)
+        
+        # 2. Controls dependent on Results
+        self.btn_export.setEnabled(has_results)
+        self.btn_report_window.setEnabled(has_results)
+        self.chk_mode_static.setEnabled(has_results)
+        
+        # 3. Parameters
+        # Generally can change params anytime a field is loaded
+        self.spin_tank.setEnabled(has_field)
+        self.spin_speed.setEnabled(has_field)
+        self.spin_flow.setEnabled(has_field)
+        self.combo_drones.setEnabled(has_field)
+
     def add_separator(self, layout):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
@@ -228,15 +266,114 @@ class AgriSwarmApp(QMainWindow):
         self.btn_export.setEnabled(False)
         self.map_widget.clear_map()
 
-    def load_field(self):
-        if not self.filename: return
+    def on_truck_offset_changed(self, value):
+        """Maneja el cambio interactivo de la distancia de estacion (snap)"""
+        if not self.polygon: return
+
+        service_points = getattr(self.map_widget, 'service_route_points', [])
+        
+        # Ignorar si estamos dibujando
+        if hasattr(self.map_widget, 'temp_route_points') and self.map_widget.temp_route_points:
+             return
+
+        if not service_points: return
+
+        # Guardar original si no existe
+        if not hasattr(self, 'original_manual_route') or self.original_manual_route is None:
+             self.original_manual_route = list(service_points)
+        
+        # Resetear si offset es 0
+        if value < 0.1:
+            self.map_widget.service_route_points = list(self.original_manual_route)
+            self.map_widget.draw_service_route(False)
+            self.map_widget.update()
+            return
+
+        # Snap Logic
         try:
+             offset_poly = self.polygon.buffer(value, join_style=2)
+             target_ring = None
+             
+             if not offset_poly.is_empty:
+                 if offset_poly.geom_type == 'Polygon':
+                     target_ring = offset_poly.exterior
+                 elif offset_poly.geom_type == 'MultiPolygon':
+                     largest = max(offset_poly.geoms, key=lambda p: p.area)
+                     target_ring = largest.exterior
+            
+             if target_ring:
+                 new_points = []
+                 for p in self.original_manual_route:
+                     pt = Point(p)
+                     d = target_ring.project(pt)
+                     new_pt = target_ring.interpolate(d)
+                     new_points.append((new_pt.x, new_pt.y))
+                 
+                 self.map_widget.service_route_points = new_points
+                 self.map_widget.draw_service_route(False)
+                 self.map_widget.update()
+                 
+        except Exception as e:
+             print(f"Error interactive snap: {e}")
+
+    def load_field(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Cargar Campo", 
+            "", 
+            "Archivos JSON (*.json);;Todos los archivos (*)"
+        )
+        
+        if not filename: return
+
+        try:
+            self.filename = filename 
             poly = FieldIO.load_field(self.filename)
-            self.points = list(poly.exterior.coords)[:-1]
+            
+            # FORCE 2D: Strip Z coordinate if present to avoid "too many values to unpack" errors
+            # shapely coords can be (x, y, z), but our logic expects (x, y)
+            raw_coords = list(poly.exterior.coords)
+            self.points = [(p[0], p[1]) for p in raw_coords][:-1]
+            
+            # Reconstruct Polygon as strict 2D
+            self.polygon = Polygon(self.points) 
+
             self.best_path = None
             self.map_widget.draw_editor_state(self.points)
+            self.setWindowTitle(f"AgriSwarm Planner - {filename.split('/')[-1]}")
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+
+    def toggle_draw_route(self):
+        is_drawing = self.btn_draw_route.isChecked()
+        
+        # Connect/Reconnect Signal to ensure update
+        try: self.map_widget.route_length_changed.disconnect(self.on_route_length_update)
+        except: pass
+        self.map_widget.route_length_changed.connect(self.on_route_length_update)
+        
+        if is_drawing:
+             # Refresh map: Clear everything, draw field polygon (closed)
+             # This visually "closes" the field and prepares for the new route drawing
+             self.map_widget.draw_editor_state(self.points)
+             self.original_manual_route = None
+             
+             # NOW enable route mode
+             self.map_widget.set_draw_mode_route(True)
+             
+             self.btn_draw_route.setText("FINALIZAR RUTA (0 m)")
+             # Orange button for active state
+             self.btn_draw_route.setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 10px; font-weight: bold; border-radius: 4px;")
+        else:
+             self.map_widget.set_draw_mode_route(False)
+             self.btn_draw_route.setText("DIBUJAR RUTA MOVIL")
+             # Grey button for inactive
+             self.btn_draw_route.setStyleSheet("background-color: #7f8c8d; color: white; border: none; padding: 10px; font-weight: bold; border-radius: 4px;")
+
+    def on_route_length_update(self, length):
+        """Update button text with dynamic length"""
+        if self.btn_draw_route.isChecked():
+            self.btn_draw_route.setText(f"FINALIZAR RUTA ({length:.0f} m)")
 
     def on_drone_changed(self, drone_name):
         self.current_drone = drone_name
@@ -336,14 +473,132 @@ class AgriSwarmApp(QMainWindow):
              
         # 2. PLANNING 
         try:
-            planner = BoustrophedonPlanner(spray_width=override_swath) # Use override
-            optimizer = GeneticOptimizer(planner, pop_size=50, generations=30)
-            best_angle, self.best_path, self.metrics = optimizer.optimize(campo_seguro)
-            self.safe_polygon = campo_seguro # Store for visualization toggle
+            # Check if we can reuse the existing path (same field, same swath)
+            # Only re-run Genetic Algorithm if geometry or swath changes.
+            # Truck, Tank, Speed, Flow only affect Logistics (Segmentation).
+            
+            # SANITIZE POLYGON (Fix side location conflicts & micro-segments)
+            # Unconditional repair for robust GEOS operations
+            try:
+                if not self.polygon.is_valid:
+                    cleaned = self.polygon.buffer(0)
+                    if cleaned.geom_type == 'MultiPolygon':
+                        # Keep largest area (Filter out noise/islands)
+                        cleaned = max(cleaned.geoms, key=lambda p: p.area)
+                    self.polygon = cleaned
+                
+                # Simplify to remove micro-segments (<1cm) which cause topology exceptions
+                self.polygon = self.polygon.simplify(0.01, preserve_topology=True)
+                
+                # Final check
+                if not self.polygon.is_valid:
+                     # Fallback to zero-buffer again
+                     self.polygon = self.polygon.buffer(0)
+            except Exception as e:
+                print(f"Error sanitizing polygon: {e}")
+
+            # Check for Unfinished Route (Drawing active or temp points exist)
+            temp_points = getattr(self.map_widget, 'temp_route_points', [])
+            
+            if len(temp_points) >= 2:
+                 # Auto-commit temp points if user forgot to Right-Click
+                 print("Auto-committing unfinished route...")
+                 self.map_widget.service_route_points = list(temp_points)
+                 # Ensure UI reflects committed state if needed, but logic uses data directly.
+
+            # Check custom route for constraints
+            truck_route_line = None
+            service_points = getattr(self.map_widget, 'service_route_points', [])
+            
+            if self.btn_draw_route.isChecked() and (not service_points or len(service_points) < 2):
+                 QMessageBox.warning(self, "Ruta Vacía", "El modo 'Dibujar Ruta' está activo pero no hay ruta válida.\n\nPor favor dibuja al menos 2 puntos (Click Izq) y Finaliza (Click Der),\no desactiva el modo.")
+                 return
+
+            if service_points and len(service_points) >= 2:
+
+                   # [NEW] SMART OFFSET SNAP
+                   truck_offset = self.spin_truck_offset.value()
+                   print(f"DEBUG: Checking Smart Snap. Offset={truck_offset}, Pts={len(service_points)}")
+                   
+                   # Only snap if offset is significant
+                   if truck_offset > 0.1:
+                       try:
+                            print(f"Snapping manual route to {truck_offset}m buffer...")
+                            
+                            # Determine direction based on context. usually "offset" means "expand boundary" for truck path?
+                            # Or "erode" for safety margin?
+                            # Standard GIS: buffering with positive distance = expansion (outside).
+                            offset_poly = self.polygon.buffer(truck_offset, join_style=2)
+                            
+                            target_ring = None
+                            if not offset_poly.is_empty:
+                                if offset_poly.geom_type == 'Polygon':
+                                    target_ring = offset_poly.exterior
+                                elif offset_poly.geom_type == 'MultiPolygon':
+                                    # Pick the largest component (usually the main field expanded)
+                                    largest = max(offset_poly.geoms, key=lambda p: p.area)
+                                    target_ring = largest.exterior
+                            
+                            if target_ring:
+                                new_points = []
+                                for p in service_points:
+                                    pt = Point(p)
+                                    # Project current point to the nearest point on the target ring
+                                    d = target_ring.project(pt)
+                                    new_pt = target_ring.interpolate(d)
+                                    new_points.append((new_pt.x, new_pt.y))
+                                
+                                # Update Data and Map
+                                print(f"DEBUG: Snapping applied. {len(service_points)} -> {len(new_points)} points.")
+                                service_points = new_points
+                                self.map_widget.service_route_points = new_points
+                                self.map_widget.draw_service_route(False) # Update internal line items
+                                self.map_widget.update() # Force UI repaint
+                            else:
+                                print("DEBUG: Failed to generate valid offset ring.")
+
+                       except Exception as e:
+                            print(f"Error snapping route: {e}")
+                            import traceback
+                            traceback.print_exc()
+                   print(f"DEBUG: ROUTE DETECTED! Use Custom Route with {len(service_points)} pts.")
+                   # Deduplicate points (prevent zero-length segments)
+                   clean_points = [service_points[0]]
+                   for p in service_points[1:]:
+                       # Min distance squared check (e.g. 1cm)
+                       if (p[0]-clean_points[-1][0])**2 + (p[1]-clean_points[-1][1])**2 > 0.0001:
+                           clean_points.append(p)
+                           
+                   if len(clean_points) >= 2:
+                       truck_route_line = LineString(clean_points)
+
+            # Check if we can reuse the existing path (same field, same swath, same route constraint)
+            # Only re-run Genetic Algorithm if geometry, swath, or truck constraint changes.
+            route_sig = str(service_points) if service_points else "None"
+            current_opt_signature = (self.polygon.wkt, override_swath, route_sig)
+            last_opt_signature = getattr(self, 'last_opt_signature', None)
+            
+            if last_opt_signature == current_opt_signature and hasattr(self, 'best_path') and self.best_path:
+                print("Reutilizando ruta optima existente (Solo actualizando logistica)...")
+                # self.best_path and self.safe_polygon are already set
+                campo_seguro = self.safe_polygon
+            else:
+                print("Calculando nueva ruta optima...")
+                planner = BoustrophedonPlanner(spray_width=override_swath) # Use override
+                optimizer = GeneticOptimizer(planner, pop_size=50, generations=30)
+                # Pass truck_route for logistical optimization
+                best_angle, self.best_path, self.metrics = optimizer.optimize(campo_seguro, truck_route=truck_route_line)
+                self.safe_polygon = campo_seguro # Store for visualization toggle
+                
+                # Update Signature
+                self.last_opt_signature = current_opt_signature
             
             # --- FASE 2.5: PHYSICS SEGMENTATION ---
             truck_offset = self.spin_truck_offset.value()
             mobile_station = MobileStation(truck_speed_mps=5.0, truck_offset_m=truck_offset) 
+            
+            # Retrieve Road Boundary for Visualization
+            self.road_geom = mobile_station.get_road_boundary(self.polygon) 
             
             # Update segmenter to use override target rate if we had one (we only expose swath/tank/flow/speed)
             # Assuming target_rate is fixed or we should add it? 
@@ -363,10 +618,24 @@ class AgriSwarmApp(QMainWindow):
             if not is_pump_ok:
                  QMessageBox.warning(self, "Pump Warning", pump_msg)
             
-            # Usar el poligono del camino (buffer) como referencia para el camion
-            road_poly = self.polygon.buffer(5.0, join_style=2)
+            # --- CUSTOM ROAD LOGIC ---
+            truck_route_line = None
+            service_points = getattr(self.map_widget, 'service_route_points', [])
+            if service_points and len(service_points) >= 2:
+                 truck_route_line = LineString(service_points)
+                 self.road_geom = None # Hide default perimeter if custom route is active
             
-            mission_cycles = segmenter.segment_path(self.polygon, self.best_path, truck_polygon=road_poly)
+            # Segment Path
+            # Note: We pass self.polygon. MobileStation handles the road buffering internally.
+            # We do NOT pass start_point here, so the segmenter defaults to projecting 
+            # the first point of the ACTUAL path (raw_path[0]) onto the road.
+            # This ensures the truck starts perpendicular to where the drone starts spraying.
+            mission_cycles = segmenter.segment_path(
+                self.polygon, 
+                self.best_path, 
+                truck_polygon=self.polygon,
+                truck_route_line=truck_route_line
+            )
             
             # Inject Swath Width into cycles metadata for visualization
             for cycle in mission_cycles:
@@ -394,19 +663,7 @@ class AgriSwarmApp(QMainWindow):
             total_truck_dist = sum(c.get('truck_dist', 0) for c in mission_cycles)
             self.truck_dist = total_truck_dist
             
-            # Recalcular truck paths para visualizacion (como listas de coordenadas)
-            # El segmenter devuelve truck_start y truck_end, pero no la geometria completa visual.
-            # Necesitamos reconstruirla para que el mapa la dibuje.
-            for cycle in mission_cycles:
-                if cycle.get('truck_dist', 0) > 0:
-                    # Reconstruct visual path using app helper (or better logic inside segmenter, but this works)
-                    ts = Point(cycle['truck_start'])
-                    te = Point(cycle['truck_end'])
-                     # Usamos road_poly (buffer 5m) para el camino del camion
-                    road_poly = self.polygon.buffer(5.0, join_style=2)
-                    t_path, _ = self.calculate_truck_route(road_poly.exterior, ts, te)
-                    if t_path:
-                        cycle['truck_path_coords'] = list(t_path.coords)
+            # Pass full cycles to map widget
 
             # Pass full cycles to map widget
             self.map_widget.draw_results(self.polygon, campo_seguro, mission_cycles)
@@ -564,13 +821,46 @@ class AgriSwarmApp(QMainWindow):
         self.text_report.setHtml(html)
 
     def export_mission(self):
-        if not self.best_path: return
+        if not self.last_mission_cycles: return
+        
         try:
-            filename = "mision_agriswarm.plan"
-            self.export_status_label.setText(f"Exportado: {filename}")
-            QMessageBox.information(self, "Exportar", f"Misión guardada en:\n{filename}")
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Exportar Misión",
+                "mision_agriswarm.json",
+                "JSON Files (*.json);;Todos los archivos (*)"
+            )
+            
+            if not filename: return
+            
+            import json
+            
+            # Helper for non-serializable objects (like numpy arrays)
+            def default_serializer(obj):
+                if hasattr(obj, 'tolist'): return obj.tolist()
+                return str(obj)
+                
+            # Extract Polygon Coords for Re-loading
+            poly_coords = []
+            if self.polygon:
+                if hasattr(self.polygon, 'exterior'):
+                     poly_coords = list(self.polygon.exterior.coords)
+
+            # Structured Export
+            data = {
+                "type": "AgriSwarmSession",
+                "version": "1.0",
+                "polygon": poly_coords,
+                "mission_cycles": self.last_mission_cycles
+            }
+
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=4, default=default_serializer)
+
+            QMessageBox.information(self, "Exportar", f"Misión guardada exitosamente en:\n{filename}")
+            
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, "Error Exportando", str(e))
         
     def show_comparative_report(self):
         """Genera y muestra el reporte de Tesis en el sidebar"""
@@ -625,7 +915,9 @@ class AgriSwarmApp(QMainWindow):
              cycles_to_draw = self.static_cycles if use_static else self.last_mission_cycles
              
              if cycles_to_draw:
-                self.map_widget.draw_results(self.polygon, self.safe_polygon, cycles_to_draw, is_static=use_static)
+                # Pass road_geom if available
+                road = getattr(self, 'road_geom', None)
+                self.map_widget.draw_results(self.polygon, self.safe_polygon, cycles_to_draw, is_static=use_static, road_geom=road)
         else:
              # Mode Editor: Redraw Editor Points
              self.map_widget.draw_editor_state(self.points)

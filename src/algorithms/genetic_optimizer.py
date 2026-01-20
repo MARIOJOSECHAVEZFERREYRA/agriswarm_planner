@@ -1,8 +1,9 @@
 import numpy as np
 import random
-from shapely.geometry import Polygon
-from typing import List, Tuple
+from shapely.geometry import Polygon, LineString, Point
+from typing import List, Tuple, Optional
 from .path_planner import BoustrophedonPlanner
+from .cost_evaluator import RouteCostEvaluator
 from .decomposition import ConcaveDecomposer
 
 class GeneticOptimizer:
@@ -26,9 +27,10 @@ class GeneticOptimizer:
         # El paper usa 3 decimales de precisión 
         self.precision_decimals = 3 
 
-    def optimize(self, polygon: Polygon) -> Tuple[float, List[tuple], dict]:
+    def optimize(self, polygon: Polygon, truck_route: Optional[LineString] = None) -> Tuple[float, List[tuple], dict]:
         """
         Ejecuta el ciclo evolutivo completo para encontrar el ángulo óptimo.
+        :param truck_route: Ruta lineal opcional para optimizar el punto de encuentro.
         :return: (best_angle, best_path, metrics)
         """
         # 1. Inicialización de Población (Ángulos aleatorios 0-360) [cite: 777]
@@ -48,46 +50,80 @@ class GeneticOptimizer:
             
             # --- EVALUACIÓN DE LA POBLACIÓN ---
             distances_l = []  # Para almacenar todas las distancias 'l' de esta gen
-            raw_metrics = []  # (l, S_prime, path) para cada individuo
+            logistics_costs = [] # Costos logisticos (distancia a truck_route - Anchor)
+            coop_costs = []      # Costos cooperativos (distancia perimetral entre partes)
+            
+            raw_metrics = []  # (l, S_prime, path, log_cost, coop_cost) para cada individuo
 
             for angle in population:
                 # 1. Descomposición del Polígono (Fase 2)
-                # Si el polígono es cóncavo y obstructivo para este ángulo, se divide.
                 sub_polygons = ConcaveDecomposer.decompose(polygon, angle)
                 
                 # 2. Generación de Ruta para cada sub-polígono (Fase 3)
                 total_path = []
+                sub_paths = [] # Almacenar partes separadas para costo cooperativo
                 total_l = 0.0
                 total_s_prime = 0.0
                 
                 for sub_poly in sub_polygons:
                     path, l, s_prime = self.planner.generate_path(sub_poly, angle)
                     total_path.extend(path)
+                    sub_paths.append(path)
                     total_l += l
                     total_s_prime += s_prime
                 
+                # COOPERATIVE COST: Distancia perimetral del camion entre sub-rutas
+                truck_perimeter_cost = RouteCostEvaluator.calculate_total_truck_cost(polygon, sub_paths)
+                
+                # Logistics Cost Calc (Custom Route Anchor)
+                log_cost = 0.0
+                if truck_route and len(total_path) > 1:
+                    # Penalizar si Start/End están lejos de la ruta del camión
+                    p_start = Point(total_path[0])
+                    p_end = Point(total_path[-1])
+                    d1 = truck_route.distance(p_start)
+                    d2 = truck_route.distance(p_end)
+                    log_cost = d1 + d2 
+                
                 distances_l.append(total_l)
-                raw_metrics.append((total_l, total_s_prime, total_path))
+                logistics_costs.append(log_cost)
+                coop_costs.append(truck_perimeter_cost)
+                
+                raw_metrics.append((total_l, total_s_prime, total_path, log_cost, truck_perimeter_cost))
 
             # --- CÁLCULO DE FITNESS (Ec. 14 y 15) ---
-            # Necesitamos la norma L2 de todas las distancias para normalizar [cite: 800]
-            # I_norm = l_i / sqrt(sum(l^2))
+            # Normalización
             sum_sq_l = sum(d**2 for d in distances_l)
             sqrt_sum_sq_l = np.sqrt(sum_sq_l) if sum_sq_l > 0 else 1.0
+            
+            sum_sq_log = sum(d**2 for d in logistics_costs)
+            sqrt_sum_log = np.sqrt(sum_sq_log) if sum_sq_log > 0 else 1.0
+            
+            sum_sq_coop = sum(d**2 for d in coop_costs)
+            sqrt_sum_coop = np.sqrt(sum_sq_coop) if sum_sq_coop > 0 else 1.0
 
-            for i, (l, s_prime, path) in enumerate(raw_metrics):
+            for i, (l, s_prime, path, log_cost, coop_cost) in enumerate(raw_metrics):
                 # 1. Distancia Normalizada (Ec. 14) [cite: 800]
                 i_norm = l / sqrt_sum_sq_l
                 
-                # 2. Tasa de Cobertura Extra Normalizada (Ec. 12 simplificada en 15)
-                # Error = |S' - S| / S
-                # Nota: Si S' < S (falta cobertura), también es error.
+                # 2. Error de Cobertura
                 coverage_error = abs(s_prime - target_area_S) / target_area_S if target_area_S > 0 else 0
                 
-                # 3. Función de Fitness (Ec. 15) [cite: 803]
-                # f = (I_norm + Error)^-1
-                # Usamos un epsilon pequeño para evitar división por cero
-                denom = i_norm + coverage_error
+                # 3. Costo Logistico Normalizado (Anchor/Custom Route)
+                log_norm = (log_cost / sqrt_sum_log) if truck_route else 0.0
+                
+                # 4. Costo Cooperativo Normalizado (Truck Perimeter)
+                coop_norm = coop_cost / sqrt_sum_coop
+                
+                # 5. Función de Fitness INTEGRADA
+                # Pesos:
+                # w_log (Anchor) = 5.0 (Prioridad Maxima a ruta manual)
+                # w_coop (Perimetro) = 2.0 (Evitar saltos de rana)
+                
+                w_log = 5.0 if truck_route else 0.0 # Increased to prioritize alignment
+                w_coop = 2.0
+                
+                denom = i_norm + coverage_error + (w_log * log_norm) + (w_coop * coop_norm)
                 fitness = 1.0 / denom if denom > 0 else 0.0
                 
                 fitness_values.append(fitness)
@@ -99,7 +135,9 @@ class GeneticOptimizer:
                     "l": l,
                     "s_prime": s_prime,
                     "eta": coverage_error * 100, # En porcentaje
-                    "path": path
+                    "path": path,
+                    "truck_cost": coop_cost, # NEW: Truck Perimeter Distance
+                    "anchor_cost": log_cost  # NEW: Distance to Custom Route
                 }
                 metrics_list.append(metrics)
 

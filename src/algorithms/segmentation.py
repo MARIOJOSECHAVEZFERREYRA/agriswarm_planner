@@ -79,7 +79,7 @@ class MissionSegmenter:
             
         return True
 
-    def segment_path(self, polygon, raw_path, truck_polygon=None):
+    def segment_path(self, polygon, raw_path, truck_polygon=None, start_point=None, truck_route_line=None):
         """
         Segmenta la ruta con logica Smart Nozzle.
         """
@@ -94,18 +94,15 @@ class MissionSegmenter:
         current_time_air = 0.0
         
         # Initial Truck Pos
-        p_start = raw_path[0]
-        r_start, _, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p_start[:2], p_start[:2]) 
+        # If start_point (Home/Depot) is provided, truck starts there (projected to road).
+        # Otherwise, truck starts at projection of first path point.
+        init_pos = start_point if start_point else raw_path[0]
+        r_start, _, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, init_pos[:2], init_pos[:2], ref_route=truck_route_line) 
         truck_pos = (r_start.x, r_start.y)
         
         # Start Cycle Logic
         # Commute 1: Truck -> First Point (DEADHEADING)
-        # We handle commutes DYNAMICALLY when flushing a cycle or starting a new one.
-        # But for the loop, we need to account for the "Initial Commute" cost in the FIRST cycle.
-        
-        # Init first cycle
-        # We need to calculate initial commute p1->p2 cost? No, Truck->P1 cost.
-        dist_commute_in = np.linalg.norm(np.array(truck_pos) - np.array(p_start[:2]))
+        dist_commute_in = np.linalg.norm(np.array(truck_pos) - np.array(raw_path[0][:2]))
         time_commute_in = dist_commute_in / self.speed_ms
         current_time_air += time_commute_in
         # No liquid for commute
@@ -127,7 +124,7 @@ class MissionSegmenter:
             liq_step = (dist_step * self.liters_per_meter) if is_spray else 0.0
             
             # 2. Predict Return Cost from P2
-            r_opt_p2, _, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p2[:2], truck_pos[:2])
+            r_opt_p2, _, _, _ = self.station.calculate_rendezvous(ref_polygon_truck, p2[:2], truck_pos[:2], ref_route=truck_route_line)
             dist_return = np.linalg.norm(np.array(p2[:2]) - np.array([r_opt_p2.x, r_opt_p2.y]))
             time_return = dist_return / (self.speed_ms * 1.5)
             
@@ -152,7 +149,7 @@ class MissionSegmenter:
                 current_cycle_points.append(p1) # Close loop at P1
                 
                 # Calculate return stats
-                r_opt_p1, dist_truck, _, truck_path_list = self.station.calculate_rendezvous(ref_polygon_truck, p1[:2], truck_pos[:2])
+                r_opt_p1, dist_truck, _, truck_path_list = self.station.calculate_rendezvous(ref_polygon_truck, p1[:2], truck_pos[:2], ref_route=truck_route_line)
                 r_point = (r_opt_p1.x, r_opt_p1.y)
                 
                 # Add Return Segment (DEADHEADING)
@@ -206,10 +203,11 @@ class MissionSegmenter:
         # Final Cycle
         if current_cycle_segments:
              p_last = current_cycle_segments[-1]['p2']
-             r_end, dist_truck_final, _, truck_path_list_final = self.station.calculate_rendezvous(ref_polygon_truck, p_last[:2], truck_pos[:2])
+             # Calculate R_FINAL using the custom route if available
+             r_end, dist_truck_final, _, truck_path_list_final = self.station.calculate_rendezvous(ref_polygon_truck, p_last[:2], truck_pos[:2], ref_route=truck_route_line)
              r_end_point = (r_end.x, r_end.y)
              
-             # Return Segment
+             # Return Segment (Land at R_FINAL)
              commute_return = {'p1': p_last, 'p2': r_end_point, 'spraying': False}
              current_cycle_segments.append(commute_return)
              
@@ -219,7 +217,8 @@ class MissionSegmenter:
              current_cycle_segments.insert(0, commute_in)
              
              # Points
-             current_cycle_points.append(p_last)
+             # Note: current_cycle_points already tracked spray points. 
+             # We just need to ensure the full path reflects the return.
              full_path = [truck_pos] + current_cycle_points + [r_end_point]
              
              cycles.append({
@@ -227,7 +226,6 @@ class MissionSegmenter:
                     "path": full_path,
                     "segments": current_cycle_segments,
                     "truck_start": truck_pos,
-                    "truck_end": r_end_point, 
                     "truck_end": r_end_point, 
                     "truck_dist": dist_truck_final,
                     "truck_path_coords": truck_path_list_final

@@ -81,6 +81,8 @@ class MapWidget(QGraphicsView):
     map_right_clicked = pyqtSignal(float, float) # Click derecho
     point_moved = pyqtSignal(int, float, float)  # Arrastrar punto (indice, nueva_x, nueva_y)
     
+    route_length_changed = pyqtSignal(float) # Signal for UI update
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_app = parent
@@ -109,6 +111,11 @@ class MapWidget(QGraphicsView):
         
         # Mouse Tracking for Hover Labels
         self.setMouseTracking(True)
+        
+        # Modo de Dibujo
+        self.draw_mode_route = False
+        self.temp_route_points = []
+        self.service_route_points = [] # Ruta confirmada
         self.hover_group = None
         self.hover_text = None
         self.hover_bg = None
@@ -206,6 +213,12 @@ class MapWidget(QGraphicsView):
         self.hover_text = None
         self.hover_bg = None
         
+        # Reset Route State (Fix Segfault by dropping refs to deleted C++ items)
+        self.route_items = []
+        self.temp_route_points = []
+        self.service_route_points = []
+        self.set_draw_mode_route(False)
+        
         # Reset Geometries to prevent Ghost Hover detection
         self.last_polygon_geom = None
         self.last_safe_geom = None
@@ -213,6 +226,74 @@ class MapWidget(QGraphicsView):
         
         # Cache for overlapping labels
         self.label_cache = {}
+
+    def set_draw_mode_route(self, enabled):
+        self.draw_mode_route = enabled
+        if enabled:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            
+    
+
+
+    def draw_service_route(self, is_temp=False):
+        """Dibuja la ruta de servicio (camion)"""
+        # Clean previous items
+        if not hasattr(self, 'route_items'): self.route_items = []
+        for item in self.route_items:
+             try: self.scene.removeItem(item)
+             except: pass
+        self.route_items = []
+
+        points = self.temp_route_points if is_temp else self.service_route_points
+        if not points or len(points) < 2: return
+        
+        path = QPainterPath()
+        path.moveTo(points[0][0], points[0][1])
+        
+        total_len = 0.0
+        prev_p = points[0]
+        
+        for p in points[1:]:
+             path.lineTo(p[0], p[1])
+             dx = p[0] - prev_p[0]
+             dy = p[1] - prev_p[1]
+             total_len += (dx*dx + dy*dy)**0.5
+             prev_p = p
+             
+        self.route_length_changed.emit(total_len)
+             
+        pen = QPen(QColor('#e67e22')) # Orange
+        pen.setWidth(4 if not is_temp else 2)
+        pen.setCosmetic(True)
+        if is_temp: pen.setStyle(Qt.PenStyle.DashLine)
+        
+        item = self.scene.addPath(path, pen)
+        item.setZValue(5) 
+        self.route_items.append(item)
+        
+        # Draw points
+        # Draw points
+        for i, p in enumerate(points):
+             r = 6
+             # Create item at local origin to work correctly with setPos + IgnoreTransform
+             p_item = QGraphicsEllipseItem(-r, -r, r*2, r*2)
+             
+             # Style look-alike to polygon editor (White center, Bold colored rim)
+             p_item.setBrush(QBrush(QColor("white")))
+             p_item.setPen(QPen(QColor('#d35400'), 2))
+             
+             p_item.setPos(p[0], p[1])
+             p_item.setZValue(100) # High Z to be visible
+             p_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+             
+             # Store index and type for interaction
+             p_item.setData(0, i) 
+             p_item.setData(1, "route_point")
+             
+             self.scene.addItem(p_item)
+             self.route_items.append(p_item)
 
     def draw_editor_state(self, points):
         """Dibuja polígono editable"""
@@ -222,9 +303,9 @@ class MapWidget(QGraphicsView):
         # 1. Líneas
         if len(points) > 1:
             path = QPainterPath()
-            path.moveTo(*points[0])
+            path.moveTo(points[0][0], points[0][1])
             for p in points[1:]:
-                path.lineTo(*p)
+                path.lineTo(p[0], p[1])
             
             pen = QPen(QColor('#4285F4'))
             pen.setWidth(3)
@@ -264,19 +345,32 @@ class MapWidget(QGraphicsView):
         
         self.scene.addItem(ellipse)
 
-    def draw_results(self, polygon_geom, safe_geom, mission_cycles, is_static=False):
+    def draw_results(self, polygon_geom, safe_geom, mission_cycles, is_static=False, road_geom=None):
         """
-        Dibuja los resultados de la mision segmentada.
-        :param mission_cycles: Lista de dicts [{'type': 'work', 'path': [], 'truck_path': ...}, ...]
-        :param is_static: Boolean, si es True activamos visualizaciones especificas (labels de retorno).
+        Dibuja los resultados. 
+        road_geom: LinearRing del camino del camion (offset boundary).
         """
-
         self.last_polygon_geom = polygon_geom
         self.last_safe_geom = safe_geom
         self.last_mission_cycles = mission_cycles
+        self.last_road_geom = road_geom
         
         self.clear_map()
         
+        # 0. Draw Truck Road (Limit)
+        if road_geom:
+             # road_geom is likely a LinearRing (from .exterior) or LineString. 
+             # Ensure we iterate coords correctly.
+             poly_r = QPolygonF([QPointF(x, y) for x, y in road_geom.coords])
+             
+             pen_r = QPen(QColor('#e67e22')) # Carrot Orange
+             pen_r.setStyle(Qt.PenStyle.DashLine)
+             pen_r.setWidth(1)
+             pen_r.setCosmetic(True)
+             
+             # Use addPath or addPolygon. Since it's a ring, addPolygon is fine (closed).
+             self.scene.addPolygon(poly_r, pen_r, QBrush(Qt.BrushStyle.NoBrush)).setZValue(1)
+
         if polygon_geom:
             poly_q = QPolygonF([QPointF(x, y) for x, y in polygon_geom.exterior.coords])
             brush = QBrush(QColor(46, 204, 113, 50))
@@ -681,6 +775,18 @@ class MapWidget(QGraphicsView):
     def mouseMoveEvent(self, event: QMouseEvent):
         super().mouseMoveEvent(event)
         
+        # 0. Handle Route Drawing Interaction
+        if self.draw_mode_route:
+            if self.dragging_point_index is not None:
+                scene_pos = self.mapToScene(event.pos())
+                x, y = scene_pos.x(), scene_pos.y()
+                
+                # Update temp route point
+                if 0 <= self.dragging_point_index < len(self.temp_route_points):
+                    self.temp_route_points[self.dragging_point_index] = (x, y)
+                    self.draw_service_route(is_temp=True)
+            return
+        
         # 1. Logic for Dragging Points (Priority)
         if self.dragging_point_index is not None:
             scene_pos = self.mapToScene(event.pos())
@@ -790,6 +896,46 @@ class MapWidget(QGraphicsView):
         self.hover_group.setPos(x, y)
 
     def mousePressEvent(self, event: QMouseEvent):
+        # 0. Route Drawing Mode (Priority)
+        if self.draw_mode_route:
+            scene_pos = self.mapToScene(event.pos())
+            x, y = scene_pos.x(), scene_pos.y()
+            
+            # Check for click on existing point
+            item = self.scene.itemAt(scene_pos, self.transform())
+            clicked_point_idx = None
+            if isinstance(item, QGraphicsEllipseItem) and item.data(1) == "route_point":
+                clicked_point_idx = item.data(0)
+
+            if event.button() == Qt.MouseButton.LeftButton:
+                if clicked_point_idx is not None:
+                    # Start Dragging Route Point
+                    self.dragging_point_index = clicked_point_idx
+                    self.setDragMode(QGraphicsView.DragMode.NoDrag)
+                else:
+                    # Add New Point
+                    self.temp_route_points.append((x, y))
+                    self.draw_service_route(is_temp=True)
+            
+            elif event.button() == Qt.MouseButton.RightButton:
+                if clicked_point_idx is not None:
+                     # Delete Point
+                     if 0 <= clicked_point_idx < len(self.temp_route_points):
+                         self.temp_route_points.pop(clicked_point_idx)
+                         self.draw_service_route(is_temp=True)
+                else:
+                    # Finish Drawing
+                    if len(self.temp_route_points) >= 2:
+                        self.service_route_points = list(self.temp_route_points)
+                        self.draw_service_route(is_temp=False)
+                        self.set_draw_mode_route(False)
+                    else:
+                        # Cancel
+                        self.temp_route_points = []
+                        self.set_draw_mode_route(False)
+                        self.draw_service_route(is_temp=False)
+            return
+
         # 1. Detectar si hicimos click en un PUNTO existente
         scene_pos = self.mapToScene(event.pos())
         item = self.scene.itemAt(scene_pos, self.transform())

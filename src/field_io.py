@@ -20,13 +20,21 @@ class JSONMapAdapter(MapInterface):
             return json.load(f)
 
     def get_boundary(self) -> Polygon:
-        # Legacy JSON format had "coordinates" directly or under "features" if GeoJSON.
-        # The checked file uses {"coordinates": [...]}
-        coords = self._data.get("coordinates", [])
+        # 1. Handle List Input (Legacy Mission Export Error)
+        if isinstance(self._data, list):
+             raise ValueError("El archivo es un Reporte de Misión (Lista), no un Mapa de Campo.\nPara cargar un campo, use el archivo original .json del polígono.")
+
+        # 2. Handle AgriSwarmSession Format (Future-proof)
+        # If we update export to save "polygon", read it here.
+        if self._data.get("type") == "AgriSwarmSession":
+             coords = self._data.get("polygon", [])
+             
+        # 3. Legacy Field Format
+        else:
+            coords = self._data.get("coordinates", [])
         
         # Ensure 3D support (padded with 0 if missing)
         # However, for now we return 2D polygon as shapely handles 2D better for planning
-        # The interface allows future extensions.
         if not coords:
             return Polygon()
         return Polygon(coords)

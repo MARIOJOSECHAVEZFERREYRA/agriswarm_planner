@@ -12,18 +12,52 @@ class MobileStation:
         self.truck_speed = truck_speed_mps # Velocidad media del camion
         self.truck_offset_m = truck_offset_m # Distancia del ruta al borde
 
-    def calculate_rendezvous(self, polygon: Polygon, p_drone_exit: tuple, truck_start_pos: tuple):
+    def get_road_boundary(self, polygon: Polygon):
+        """Devuelve el anillo de la ruta del camion (borde + offset)"""
+        if self.truck_offset_m > 0:
+            limit_poly = polygon.buffer(self.truck_offset_m, join_style=2)
+            return limit_poly.exterior
+        return polygon.exterior
+
+    def calculate_rendezvous(self, polygon: Polygon, p_drone_exit: tuple, truck_start_pos: tuple, ref_route: LineString = None):
         """
         Calcula el punto de encuentro optimo (R_opt) y la logistica.
+        Si ref_route es != None, usa esa LineString (camino abierto) en lugar del perimetro (anillo).
         """
-        # Determine the truck path boundary (optionally offset from field edge)
-        if self.truck_offset_m > 0:
-            # Buffer expands polygon (positive offset = outside if polygon is CCW and "buffer" logic holds for standard field)
-            # Use mitre join (2) to preserve corner shape roughly
-            limit_poly = polygon.buffer(self.truck_offset_m, join_style=2)
-            boundary = limit_poly.exterior
-        else:
-            boundary = polygon.exterior
+        if ref_route:
+            # LOGICA DE CADENA ABIERTA (Linear Route)
+            boundary = ref_route
+            point_exit = Point(p_drone_exit)
+            
+            # 1. R_opt (Proyeccion mas cercana en la linea)
+            dist_projected = boundary.project(point_exit)
+            r_opt = boundary.interpolate(dist_projected)
+            
+            # 2. Ruta Camion (Lineal, sin vueltas)
+            start_dist = boundary.project(Point(truck_start_pos))
+            target_dist = dist_projected
+            
+            truck_travel_dist = abs(target_dist - start_dist)
+            
+            # Geometria del camino
+            if truck_travel_dist > 0.1:
+                # Substring siempre devuelve en orden de la linea base
+                params = sorted([start_dist, target_dist])
+                path_geom = substring(boundary, params[0], params[1])
+                path_final_coords = list(path_geom.coords)
+                
+                # Invertir si vamos "hacia atras" respecto a la definicion de la linea
+                if start_dist > target_dist:
+                    path_final_coords = path_final_coords[::-1]
+            else:
+                path_final_coords = [(r_opt.x, r_opt.y)]
+                
+            truck_time_s = truck_travel_dist / self.truck_speed if self.truck_speed > 0 else float('inf')
+            return r_opt, truck_travel_dist, truck_time_s, path_final_coords
+
+        # LOGICA DE ANILLO CERRADO (Perimetro)
+        # Determine the truck path boundary
+        boundary = self.get_road_boundary(polygon)
         
         # 1. Encontrar R_opt (Proyeccion ortogonal sobre el borde)
         point_exit = Point(p_drone_exit)
