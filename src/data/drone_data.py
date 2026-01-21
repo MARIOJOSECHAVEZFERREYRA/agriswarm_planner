@@ -1,6 +1,5 @@
 from data.drone_db import DroneDB, DroneSpec, FlightSpec, BatterySpec, SpraySpec, SpecValue, PhysicalSpec
 
-
 DroneDB.DRONES = {
     # --- HYLIO (USA) ---
     "Hylio AG-272": DroneSpec(

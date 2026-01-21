@@ -4,16 +4,16 @@ from shapely.geometry import Polygon
 
 class FieldIO:
     """
-    Módulo para guardar y cargar campos agrícolas en formato JSON simple.
+    Module to save and load agricultural fields in simple JSON format.
     """
 
     @staticmethod
     def save_field(polygon: Polygon, filename: str):
-        """Guarda las coordenadas del polígono en un archivo JSON."""
-        # Asegurar que el directorio existe
+        """Saves the polygon coordinates to a JSON file."""
+        # Ensure the directory exists
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         
-        # Extraer coordenadas como lista de tuplas
+        # Extract coordinates as a list of tuples
         coords = list(polygon.exterior.coords)
         
         data = {
@@ -23,13 +23,13 @@ class FieldIO:
         
         with open(filename, 'w') as f:
             json.dump(data, f, indent=4)
-        print(f"💾 Campo guardado en: {filename}")
+        print(f"Field saved to: {filename}")
 
     @staticmethod
     def load_field(filename: str) -> Polygon:
-        """Carga un polígono desde un archivo JSON."""
+        """Loads a polygon from a JSON file."""
         if not os.path.exists(filename):
-            raise FileNotFoundError(f"No se encontró el archivo: {filename}")
+            raise FileNotFoundError(f"File not found: {filename}")
             
         with open(filename, 'r') as f:
             data = json.load(f)

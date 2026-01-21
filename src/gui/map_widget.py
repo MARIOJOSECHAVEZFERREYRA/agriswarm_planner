@@ -6,41 +6,41 @@ from shapely.geometry import LineString, Polygon as ShapelyPoly
 
 class MissionMarkerItem(QGraphicsItem):
     """
-    Marcador personalizado que ignora transformaciones (zoom) para mantener
-    tamaño constante en pixeles, con etiqueta de texto clara.
+    Custom marker that ignores transformations (zoom) to maintain
+    constant pixel size, with clear text label.
     """
     def __init__(self, x, y, label, color, type="default"):
         super().__init__()
         self.setPos(x, y)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-        self.setZValue(100) # Siempre visible
+        self.setZValue(100) # Always visible
         self.label = label
         self.color = QColor(color)
         self.text_color = QColor("white")
         
-        # Mapeo de nombres cortos a largos
+        # Short to long name mapping
         if label == "S": self.full_text = "START"
         elif label == "E": self.full_text = "END"
         elif label.startswith("R"): self.full_text = label.replace("R", "R")
         else: self.full_text = label
         
-        # Estilos especificos
+        # Specific styles
         if label == "S": self.color = QColor("#2ecc71") # Green
         if label == "E": self.color = QColor("#e74c3c") # Red
         if label.startswith("R"): self.color = QColor("#f39c12") # Orange for truck stops
 
     def boundingRect(self):
-        # Area de dibujo aproximada (marker + text bubble)
+        # Approximate drawing area (marker + text bubble)
         return QRectF(-10, -50, 200, 60)
 
     def paint(self, painter, option, widget):
-        # 1. Dibujar Punto/Pin
+        # 1. Draw Point/Pin
         r = 6
         painter.setBrush(QBrush(self.color))
         painter.setPen(QPen(Qt.GlobalColor.white, 2))
         painter.drawEllipse(QPointF(0, 0), r, r)
         
-        # 2. Dibujar "Callout" (Burbuja de texto)
+        # 2. Draw "Callout" (Text Bubble)
         # Offset en PIXELES (fijo, no depende del zoom)
         offset_x = 10
         offset_y = -10
@@ -53,17 +53,17 @@ class MissionMarkerItem(QGraphicsItem):
         text_h = fm.height()
         pad = 6
         
-        # Rectangulo de fondo
+        # Background rectangle
         rect_x = offset_x
         rect_y = offset_y - text_h - pad
         rect_w = text_w + (pad * 2)
         rect_h = text_h + pad
         
-        # Linea conectora (opcional)
+        # Connector line (optional)
         # painter.setPen(QPen(self.color, 1))
         # painter.drawLine(0, 0, rect_x, rect_y + rect_h)
         
-        # Caja
+        # Box
         path = QPainterPath()
         path.addRoundedRect(QRectF(rect_x, rect_y, rect_w, rect_h), 4, 4)
         
@@ -71,15 +71,15 @@ class MissionMarkerItem(QGraphicsItem):
         painter.setPen(QPen(Qt.GlobalColor.white, 1))
         painter.drawPath(path)
         
-        # Texto
+        # Text
         painter.setPen(self.text_color)
         painter.drawText(int(rect_x + pad), int(rect_y + text_h - 2), self.full_text)
 
 class MapWidget(QGraphicsView):
-    # Señales
-    map_clicked = pyqtSignal(float, float)       # Click en vacio (Añadir punto)
-    map_right_clicked = pyqtSignal(float, float) # Click derecho
-    point_moved = pyqtSignal(int, float, float)  # Arrastrar punto (indice, nueva_x, nueva_y)
+    # Signals
+    map_clicked = pyqtSignal(float, float)       # Click on empty space (Add point)
+    map_right_clicked = pyqtSignal(float, float) # Right click
+    point_moved = pyqtSignal(int, float, float)  # Drag point (index, new_x, new_y)
     
     route_length_changed = pyqtSignal(float) # Signal for UI update
 
@@ -87,18 +87,18 @@ class MapWidget(QGraphicsView):
         super().__init__(parent)
         self.parent_app = parent
         
-        # Estado
+        # State
         self.original_polygon = None
-        self.truck_path_coords = []     # Lista de coords de la camioneta
-        self.mission_cycles = None      # Lista de ciclos (path + color + markers)
-        self.recharge_markers = []      # Lista de dicts {lat, lon, label}
-        self.swath_polygons = []        # Lista de poligonos de cobertura
+        self.truck_path_coords = []     # List of truck coords
+        self.mission_cycles = None      # List of cycles (path + color + markers)
+        self.recharge_markers = []      # List of dicts {lat, lon, label}
+        self.swath_polygons = []        # List of coverage polygons
         self.show_swath = True          # Visibility toggle
         self.scene = QGraphicsScene(self)
         self.scene.setSceneRect(-100000, -100000, 200000, 200000)
         self.setScene(self.scene)
         
-        # Configuración
+        # Configuration
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -112,15 +112,15 @@ class MapWidget(QGraphicsView):
         # Mouse Tracking for Hover Labels
         self.setMouseTracking(True)
         
-        # Modo de Dibujo
+        # Drawing Mode
         self.draw_mode_route = False
         self.temp_route_points = []
-        self.service_route_points = [] # Ruta confirmada
+        self.service_route_points = [] # Confirmed route
         self.hover_group = None
         self.hover_text = None
         self.hover_bg = None
         
-        # Estado de arrastre interno
+        # Internal drag state
         self.dragging_point_index = None
 
         # State
@@ -140,7 +140,7 @@ class MapWidget(QGraphicsView):
              self.draw_results(self.last_polygon_geom, self.last_safe_geom, self.last_mission_cycles)
     
     def drawBackground(self, painter, rect):
-        """Rejilla Dinámica"""
+        """Dynamic Grid"""
         super().drawBackground(painter, rect)
         scale = self.transform().m11()
         if scale <= 0: scale = 1.0
@@ -168,7 +168,7 @@ class MapWidget(QGraphicsView):
             y += grid_step
 
     def drawForeground(self, painter, rect):
-        """Barra de Escala"""
+        """Scale Bar"""
         scale = self.transform().m11()
         if scale <= 0: return
 
@@ -205,7 +205,7 @@ class MapWidget(QGraphicsView):
         tw = fm.horizontalAdvance(text)
         painter.drawText(int(start_x + (bar_width_px - tw)/2), int(start_y - 8), text)
 
-    # --- DIBUJO ---
+    # --- DRAWING ---
 
     def clear_map(self):
         self.scene.clear()
@@ -238,7 +238,7 @@ class MapWidget(QGraphicsView):
 
 
     def draw_service_route(self, is_temp=False):
-        """Dibuja la ruta de servicio (camion)"""
+        """Draws the service route (truck)"""
         # Clean previous items
         if not hasattr(self, 'route_items'): self.route_items = []
         for item in self.route_items:
@@ -296,11 +296,11 @@ class MapWidget(QGraphicsView):
              self.route_items.append(p_item)
 
     def draw_editor_state(self, points):
-        """Dibuja polígono editable"""
+        """Draws editable polygon"""
         self.clear_map()
         if not points: return
 
-        # 1. Líneas
+        # 1. Lines
         if len(points) > 1:
             path = QPainterPath()
             path.moveTo(points[0][0], points[0][1])
@@ -319,15 +319,15 @@ class MapWidget(QGraphicsView):
                 pen_dash.setCosmetic(True)
                 self.scene.addLine(points[-1][0], points[-1][1], points[0][0], points[0][1], pen_dash).setZValue(1)
 
-        # 2. Puntos (Interactivos)
+        # 2. Points (Interactive)
         for i, p in enumerate(points):
             self.draw_point_marker(p[0], p[1], index=i)
 
-        # 3. Etiquetas
+        # 3. Labels
         self.draw_labels(points)
 
     def draw_point_marker(self, x, y, index):
-        """Punto interactivo que sabe su índice"""
+        """Interactive point that knows its index"""
         radius = 6 
         ellipse = QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
         
@@ -338,17 +338,17 @@ class MapWidget(QGraphicsView):
         
         ellipse.setPos(x, y)
         ellipse.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-        ellipse.setZValue(100) # Capa alta para capturar clics
+        ellipse.setZValue(100) # High layer to capture clicks
         
-        # GUARDAR INDICE EN EL ITEM PARA IDENTIFICARLO AL ARRASTRAR
+        # SAVE INDEX IN ITEM TO IDENTIFY IT WHEN DRAGGING
         ellipse.setData(0, index) 
         
         self.scene.addItem(ellipse)
 
     def draw_results(self, polygon_geom, safe_geom, mission_cycles, is_static=False, road_geom=None):
         """
-        Dibuja los resultados. 
-        road_geom: LinearRing del camino del camion (offset boundary).
+        Draws the results.
+        road_geom: LinearRing of the truck road (offset boundary).
         """
         self.last_polygon_geom = polygon_geom
         self.last_safe_geom = safe_geom
@@ -379,7 +379,7 @@ class MapWidget(QGraphicsView):
             pen.setCosmetic(True)
             self.scene.addPolygon(poly_q, pen, brush).setZValue(0)
             
-            # 3. Etiquetas Permanentes (Restaurado)
+            # 3. Permanent Labels (Restored)
             self.draw_labels(list(polygon_geom.exterior.coords)[:-1])
             
             centroid = polygon_geom.centroid
@@ -394,7 +394,7 @@ class MapWidget(QGraphicsView):
             pen_s.setCosmetic(True)
             self.scene.addPolygon(poly_s, pen_s, QBrush(Qt.BrushStyle.NoBrush)).setZValue(2)
 
-        # Paleta de colores para ciclos
+        # Color palette for cycles
         colors = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#2c3e50', '#c0392b']
         
         cycle_idx = 0
@@ -405,27 +405,118 @@ class MapWidget(QGraphicsView):
             
             if not path: continue
             
-            # 1. Dibujar Ruta Vuelo con ANCHO REAL (SWATH)
+            # 1. Draw Flight Route with REAL WIDTH (SWATH)
             col = colors[cycle_idx % len(colors)]
             swath_width = cycle.get('swath_width', 5.0) # Default 5m
             
-            # NUEVA LOGICA: Usar metadatos de segmentos si existen
+            # NEW OPTIMIZED LOGIC: Use visual_groups instead of micro-segments
+            visual_groups = cycle.get('visual_groups', [])
+            
+            if visual_groups:
+                # Iterate over simplified visual groups (10-20 groups instead of 1000+ segments)
+                for group_idx, group in enumerate(visual_groups):
+                    group_path = group.get('path', [])
+                    is_spraying = group.get('is_spraying', False)
+                    
+                    if len(group_path) < 2:
+                        continue
+                    
+                    # 1. Draw path line
+                    qpath = QPainterPath()
+                    qpath.moveTo(group_path[0][0], group_path[0][1])
+                    for p in group_path[1:]:
+                        qpath.lineTo(p[0], p[1])
+                    
+                    pen_group = QPen(QColor(col))
+                    
+                    if is_spraying:
+                        pen_group.setWidth(2)
+                        pen_group.setStyle(Qt.PenStyle.SolidLine)
+                    else:
+                        # Return path: dashed
+                        pen_group.setStyle(Qt.PenStyle.DashLine)
+                        pen_group.setWidth(2)
+                        
+                        # Draw arrows for return paths
+                        if len(group_path) >= 2:
+                            # Arrow at midpoint
+                            mid_idx = len(group_path) // 2
+                            self.draw_arrow(group_path[mid_idx-1], group_path[mid_idx], col)
+                    
+                    pen_group.setCosmetic(True)
+                    self.scene.addPath(qpath, pen_group).setZValue(10)
+                    
+                    # 2. Buffer for spray groups (if enabled)
+                    if self.show_swath and is_spraying and len(group_path) >= 2:
+                        try:
+                            # Create single buffer for entire group (much faster than per-segment)
+                            line_geom = LineString(group_path)
+                            swath_poly = line_geom.buffer(
+                                swath_width / 2.0,
+                                cap_style=2,
+                                join_style=2,
+                                resolution=4  # Low resolution for speed
+                            )
+                            
+                            if swath_poly.geom_type == 'Polygon':
+                                polys = [swath_poly]
+                            else:
+                                polys = swath_poly.geoms
+                            
+                            for poly in polys:
+                                qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
+                                c = QColor(col)
+                                c.setAlpha(150)
+                                brush = QBrush(c)
+                                pen_b = QPen(Qt.PenStyle.NoPen)
+                                self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
+                        
+                        except Exception as e:
+                            print(f"Warning: Failed to create buffer for group {group_idx}: {e}")
+                    
+                    # 3. STATIC MODE: Label return paths
+                    if is_static and not is_spraying and len(group_path) >= 2:
+                        # Calculate total distance of return path
+                        ret_line = LineString(group_path)
+                        d_total = ret_line.length
+                        
+                        if d_total > 10.0:  # Only significant returns
+                            # Label at midpoint
+                            mid_pt = ret_line.interpolate(0.5, normalized=True)
+                            self.draw_floating_label(mid_pt.x, mid_pt.y, f"{d_total:.0f} m")
+                
+                # Process events every cycle to keep UI responsive
+                if (cycle_idx + 1) % 2 == 0:  # Every 2 cycles
+                    from PyQt6.QtWidgets import QApplication
+                    QApplication.processEvents()
+                    
+            # FALLBACK: Old segment-based rendering (if visual_groups not available)
             segments_meta = cycle.get('segments', [])
             
-            if segments_meta:
-                # Iterar por segmento individual para decidir si dibujamos "gordo" o "fino"
-                for seg in segments_meta:
+            if segments_meta and not visual_groups:
+                # OLD LOGIC (kept for backward compatibility)
+                # This should rarely execute now
+                # OPTIMIZATION: Adaptive batch size based on total segments
+                total_segments = len(segments_meta)
+                
+                # More segments = smaller batches for better responsiveness
+                if total_segments > 500:
+                    batch_size = 25  # Large dataset: frequent UI updates
+                elif total_segments > 200:
+                    batch_size = 40  # Medium dataset
+                else:
+                    batch_size = 50  # Small dataset: less overhead
+                
+                # Iterate per individual segment to decide if we draw "thick" or "thin"
+                for seg_idx, seg in enumerate(segments_meta):
                     p1 = seg['p1']
                     p2 = seg['p2']
                     is_spraying = seg['spraying']
                     
-                    # Dibujar Linea Central (Siempre, pero estilo varia?)
-                    # Mejor: Si es spraying -> Buffer + Linea fina centro
-                    # Si no es spraying -> Solo Linea fina (o punteada?)
-                    
+                    # Draw Center Line (Always, but style varies)
                     pen_seg = QPen(QColor(col))
                     
-                    # 1. Linea base
+                    # 1. Base line
                     qseg = QPainterPath()
                     qseg.moveTo(p1[0], p1[1])
                     qseg.lineTo(p2[0], p2[1])
@@ -445,37 +536,61 @@ class MapWidget(QGraphicsView):
                     self.scene.addPath(qseg, pen_seg).setZValue(10)
                     
                     # 2. Buffer (Solo si Spraying y Habilitado)
+                    # OPTIMIZATION: Reduced resolution + early skip
                     if self.show_swath and is_spraying:
-                        line_geom = LineString([p1[:2], p2[:2]])
-                        swath_poly = line_geom.buffer(swath_width / 2.0, cap_style=2, join_style=2)
-                        
-                        if swath_poly.geom_type == 'Polygon':
-                            polys = [swath_poly]
-                        else:
-                            polys = swath_poly.geoms
+                        # Skip very short segments (< 1m) to reduce buffer count
+                        seg_length = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
+                        if seg_length >= 1.0:
+                            line_geom = LineString([p1[:2], p2[:2]])
                             
-                        for poly in polys:
-                             qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
-                             c = QColor(col)
-                             c.setAlpha(150) # Mas visible! (antes 90)
-                             brush = QBrush(c)
-                             pen_b = QPen(Qt.PenStyle.NoPen)
-                             self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
+                            # CRITICAL OPTIMIZATION: Use resolution=4 (default is 16)
+                            # This reduces buffer vertices from ~32 to ~8 per segment
+                            swath_poly = line_geom.buffer(
+                                swath_width / 2.0, 
+                                cap_style=2,      # Flat caps
+                                join_style=2,     # Mitered joins
+                                resolution=4      # ✨ 4x fewer vertices
+                            )
+                            
+                            if swath_poly.geom_type == 'Polygon':
+                                polys = [swath_poly]
+                            else:
+                                polys = swath_poly.geoms
+                                
+                            for poly in polys:
+                                 qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
+                                 c = QColor(col)
+                                 c.setAlpha(150)
+                                 brush = QBrush(c)
+                                 pen_b = QPen(Qt.PenStyle.NoPen)
+                                 self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
 
                     # 3. STATIC MODE: Label Return Segments (Non-Spraying)
                     if is_static and not is_spraying:
                         d_seg = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
-                        if d_seg > 10.0: # Only significant return paths
+                        if d_seg > 10.0:
                             mx = (p1[0] + p2[0]) / 2
                             my = (p1[1] + p2[1]) / 2
                             self.draw_floating_label(mx, my, f"{d_seg:.0f} m")
+                    
+                    # OPTIMIZATION: Batch processing with processEvents()
+                    # Keep UI responsive by processing events every N segments
+                    if (seg_idx + 1) % batch_size == 0:
+                        from PyQt6.QtWidgets import QApplication
+                        QApplication.processEvents()  # Allow UI to update
 
             else:
-                # FALLBACK (Codigo Viejo)
-                # A. Dibujar Buffer Completo
-                if len(path) > 1:
+                # FALLBACK (Old Code)
+                # A. Draw Complete Buffer
+                if len(path) > 1 and self.show_swath:
                     flight_line = LineString(path)
-                    swath_poly = flight_line.buffer(swath_width / 2.0, cap_style=2, join_style=2)
+                    # OPTIMIZATION: Use lower resolution for faster rendering
+                    swath_poly = flight_line.buffer(
+                        swath_width / 2.0, 
+                        cap_style=2, 
+                        join_style=2,
+                        resolution=4  # ✨ Reduce vertices
+                    )
                     
                     if swath_poly.geom_type == 'Polygon':
                         polys = [swath_poly]
@@ -490,7 +605,7 @@ class MapWidget(QGraphicsView):
                         pen_b = QPen(Qt.PenStyle.NoPen)
                         self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
     
-                # B. Dibujar Linea Central
+                # B. Draw Center Line
                 qpath = QPainterPath()
                 qpath.moveTo(path[0][0], path[0][1])
                 for p in path[1:]:
@@ -501,16 +616,16 @@ class MapWidget(QGraphicsView):
                 pen.setCosmetic(True)
                 self.scene.addPath(qpath, pen).setZValue(10)
             
-            # Marcadores de Inicio/Fin de ciclo
+            # Cycle Start/End markers
             label_start = "S" if cycle_idx == 0 else f"R{cycle_idx}"
             label_end = "E" if cycle_idx == len(mission_cycles)-1 else f"R{cycle_idx+1}"
             
-            # Solo dibujar si no se solapan demasiado o logica especifica
+            # Only draw if they don't overlap too much or specific logic
             # self.draw_mission_marker(path[0][0], path[0][1], col, label_start)
-            # El punto final de un ciclo es el punto de recarga del siguiente usualmente
-            self.draw_mission_marker(path[-1][0], path[-1][1], '#e74c3c', label_end) # Rojo para fin/recarga
+            # The end point of a cycle is usually the refill point of the next one
+            self.draw_mission_marker(path[-1][0], path[-1][1], '#e74c3c', label_end) # Red for end/refill
 
-            # 2. Dibujar Ruta Camion (si existe para este ciclo)
+            # 2. Draw Truck Route (if exists for this cycle)
             if truck_path_list and len(truck_path_list) > 1:
                 tpath = QPainterPath()
                 
@@ -522,56 +637,56 @@ class MapWidget(QGraphicsView):
                 p_start = truck_path_list[0]
                 p_end = truck_path_list[-1]
                 
-                # Relajar la precision para detectar solapamientos
-                # Usar enteros (metros) es suficiente para saber si es "el mismo tramo"
-                # O incluso round a 0 decimales.
+                # Relax precision to detect overlaps
+                # Using integers (meters) is enough to know if it's "the same segment"
+                # Or even round to 0 decimals.
                 k1 = (int(p_start[0]), int(p_start[1]))
                 k2 = (int(p_end[0]), int(p_end[1]))
                 
-                # Ordenar para que A->B sea igual que B->A
+                # Order so that A->B is equal to B->A
                 segment_key = tuple(sorted((k1, k2)))
                 
                 # Check fuzzy match against existing keys?
-                # Por ahora probamos con claves enteras rigidas.
+                # For now try with rigid integer keys.
                 
                 overlap_count = drawn_segments_history.get(segment_key, 0)
                 drawn_segments_history[segment_key] = overlap_count + 1
                 
-                # Construir Path (Directo, CENTRADO, sin offset espacial)
+                # Build Path (Direct, CENTERED, no spatial offset)
                 tpath.moveTo(truck_path_list[0][0], truck_path_list[0][1])
                 for p in truck_path_list[1:]:
                     tpath.lineTo(p[0], p[1])
                 
-                # Calcular Color - PALETA DE ALTO CONTRASTE
+                # Calculate Color - HIGH CONTRAST PALETTE
                 # 0: Naranja (Base)
                 # 1: Rojo (Ida y Vuelta / Trafico Medio)
                 # 2: Morado (Trafico Alto)
-                # 3+: Negro (Saturado)
+                # 3+: Black (Saturated)
                 
                 if overlap_count == 0:
-                    pen_color = QColor('#e67e22') # Naranja
+                    pen_color = QColor('#e67e22') # Orange
                     width = 3
                 elif overlap_count == 1:
-                    pen_color = QColor('#e74c3c') # Rojo Brillante
+                    pen_color = QColor('#e74c3c') # Bright Red
                     width = 3
                 elif overlap_count == 2:
-                    pen_color = QColor('#8e44ad') # Morado
+                    pen_color = QColor('#8e44ad') # Purple
                     width = 4
                 else:
-                    pen_color = QColor('#000000') # Negro
+                    pen_color = QColor('#000000') # Black
                     width = 4
 
                 pen_t = QPen(pen_color) 
                 pen_t.setStyle(Qt.PenStyle.DashLine)
                 pen_t.setWidth(width) 
                 pen_t.setCosmetic(True)
-                self.scene.addPath(tpath, pen_t).setZValue(5 + overlap_count) # Poner encima las nuevas capas
+                self.scene.addPath(tpath, pen_t).setZValue(5 + overlap_count) # Put new layers on top
             
 
 
             cycle_idx += 1
             
-        # Marcador Inicio Global
+        # Global Start Marker
         if mission_cycles and mission_cycles[0].get('path'):
             p0 = mission_cycles[0]['path'][0]
             self.draw_mission_marker(p0[0], p0[1], '#2ecc71', "S")
@@ -581,7 +696,7 @@ class MapWidget(QGraphicsView):
         self.scene.addItem(item)
 
     def draw_arrow(self, p1, p2, color):
-        """Dibuja una flecha en el punto medio del segmento para indicar direccion (Unidades de Mapa)."""
+        """Draws an arrow at the midpoint of the segment to indicate direction (Map Units)."""
         mx = (p1[0] + p2[0]) / 2
         my = (p1[1] + p2[1]) / 2
         
@@ -672,7 +787,7 @@ class MapWidget(QGraphicsView):
             self.draw_floating_label(mid_x, mid_y, f"{dist:.1f} m", angle=angle)
 
     def draw_cycle_label(self, x, y, text):
-        """Dibuja una etiqueta pequeña para el ciclo (C1, C2...)"""
+        """Draws a small label for the cycle (C1, C2...)"""
         # Convert newlines to breaks
         html_text = text.replace('\n', '<br>')
         
@@ -727,11 +842,11 @@ class MapWidget(QGraphicsView):
         font = QFont("Segoe UI", 10 if is_area else 9, QFont.Weight.Bold)
         t.setFont(font)
         
-        # Color verde oscuro para area, gris oscuro para distancias
+        # Dark green color for area, dark gray for distances
         color = "#145A32" if is_area else "#2c3e50"
         t.setDefaultTextColor(QColor(color))
         
-        # Fondo estilo etiqueta
+        # Label-style background
         border_col = "#27ae60" if is_area else "#bdc3c7"
         bg_col = "rgba(255, 255, 255, 0.9)"
         

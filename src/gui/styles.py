@@ -1,4 +1,3 @@
-# Colores Globales
 DARK_BLUE = "#2C3E50"
 MID_BLUE = "#34495e"
 TEXT_WHITE = "#ecf0f1"
@@ -8,7 +7,6 @@ ACCENT_ORANGE = "#f39c12"
 ACCENT_RED = "#e74c3c"
 ACCENT_BLUE = "#3498db"
 
-# Estilo del Panel Lateral
 SIDEBAR_STYLE = f"""
     QWidget {{
         background-color: {DARK_BLUE};
@@ -41,7 +39,7 @@ SIDEBAR_STYLE = f"""
     }}
 """
 
-# Estilos de Botones
+#button styles
 BTN_CALC_STYLE = f"""
     QPushButton {{
         background-color: {ACCENT_GREEN};

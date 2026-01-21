@@ -2,28 +2,28 @@ import sys
 import os
 from PyQt6.QtWidgets import QApplication
 
-# Configurar path
+# Configure path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from gui.app_window import AgriSwarmApp
-# Importar datos para inicializar DB
-import drone_data 
+# Import data to initialize DB
+from data import drone_data 
 
 def main():
-    # Asegurar directorios
+    # Ensure directories exist
     base_dir = os.path.dirname(__file__)
     data_dir = os.path.join(base_dir, 'data')
     if not os.path.exists(data_dir): os.makedirs(data_dir)
     filename = os.path.join(data_dir, 'mi_campo_dibujado.json')
 
-    # Iniciar App Qt
+    # Initialize Qt App
     app = QApplication(sys.argv)
     
-    # Crear ventana principal
+    # Create main window
     window = AgriSwarmApp(filename=filename)
-    window.show() # Mostrar ventana
+    window.show() # Show window
 
-    # Bucle de eventos
+    # Start event loop
     sys.exit(app.exec())
 
 if __name__ == "__main__":

@@ -3,22 +3,22 @@ import json
 
 class GeoUtils:
     """
-    Utilidades para conversión de coordenadas planas a geodésicas (WGS84)
-    y exportación de misiones.
-    Referencia por defecto: Santa Cruz, Bolivia.
+    Utilities for converting flat coordinates to geodetic (WGS84)
+    and exporting missions.
+    Default reference: Santa Cruz, Bolivia.
     """
     
-    # Constantes WGS84
+    # WGS84 Constants
     R_EARTH = 6378137.0
 
     @staticmethod
     def enu_to_geodetic(x, y, z, lat0, lon0, alt0):
         """
-        Convierte coordenadas locales ENU (East-North-Up) a GPS (Lat, Lon, Alt).
+        Converts local ENU (East-North-Up) coordinates to GPS (Lat, Lon, Alt).
         """
         rad_lat0 = math.radians(lat0)
         
-        # Diferencias en metros a grados
+        # Differences in meters to degrees
         d_lat = y / GeoUtils.R_EARTH
         d_lon = x / (GeoUtils.R_EARTH * math.cos(rad_lat0))
 
@@ -31,25 +31,25 @@ class GeoUtils:
     @staticmethod
     def export_qgc_mission(waypoints, filename, home_lat=-17.3935, home_lon=-63.2622):
         """
-        Genera un archivo .plan compatible con QGroundControl / PX4.
-        :param waypoints: Lista de tuplas (x, y) en metros.
-        :param filename: Nombre del archivo de salida.
-        :param home_lat: Latitud del punto (0,0) local.
-        :param home_lon: Longitud del punto (0,0) local.
+        Generates a .plan file compatible with QGroundControl / PX4.
+        :param waypoints: List of tuples (x, y) in meters.
+        :param filename: Output filename.
+        :param home_lat: Latitude of the local (0,0) point.
+        :param home_lon: Longitude of the local (0,0) point.
         """
         mission_items = []
-        altitude = 10.0 # Metros de altura de vuelo sobre el suelo
+        altitude = 10.0 # Flight altitude AGL (Above Ground Level) in meters
         
-        # 1. Waypoint inicial (Despegue / Takeoff)
+        # 1. Initial Waypoint (Takeoff)
         mission_items.append(GeoUtils._create_mission_item(0, home_lat, home_lon, 0, "TAKEOFF"))
 
-        # 2. Ruta de fumigación
+        # 2. Spraying route
         for i, (x, y) in enumerate(waypoints):
-            # Convertir cada punto (x,y) metros -> Lat/Lon global
+            # Convert each point (x,y) meters -> Global Lat/Lon
             lat, lon, alt = GeoUtils.enu_to_geodetic(x, y, altitude, home_lat, home_lon, 0)
             mission_items.append(GeoUtils._create_mission_item(i+1, lat, lon, alt, "WAYPOINT"))
 
-        # 3. Estructura JSON de QGroundControl
+        # 3. QGroundControl JSON Structure
         plan = {
             "fileType": "Plan",
             "geoFence": {"circles": [], "polygons": [], "version": 2},
@@ -70,11 +70,11 @@ class GeoUtils:
         with open(filename, 'w') as f:
             json.dump(plan, f, indent=4)
         
-        print(f"Misión exportada (Ref: Santa Cruz): {filename}")
+        print(f"Mission exported (Ref: Santa Cruz): {filename}")
 
     @staticmethod
     def _create_mission_item(seq, lat, lon, alt, type_cmd):
-        """Helper para crear items de misión MAVLink"""
+        """Helper to create MAVLink mission items"""
         # 22 = TAKEOFF, 16 = WAYPOINT
         cmd_id = 22 if type_cmd == "TAKEOFF" else 16 
         return {

@@ -1,21 +1,20 @@
-# src/mission_exporter.py
 import json
 
-class QGCPlanExporter:
+class MissionExporter:
     """
-    Exporta rutas al formato estándar .plan de QGroundControl/PX4.
+    Exports routes to the standard QGroundControl/PX4 .plan format.
     """
 
     @staticmethod
     def save_plan(filename, waypoints_latlon):
         """
-        :param filename: Nombre del archivo .plan
-        :param waypoints_latlon: Lista de tuplas [(lat, lon, alt), ...]
+        :param filename: Name of the .plan file
+        :param waypoints_latlon: List of tuples [(lat, lon, alt), ...]
         """
         mission_items = []
         
-        # 1. Configurar el primer item (Despegue o Dummy)
-        # Por simplicidad, asumimos que la lista son waypoints de vuelo
+        # 1. Configure the first item (Takeoff or Dummy)
+        # For simplicity, we assume the list contains flight waypoints
         for i, (lat, lon, alt) in enumerate(waypoints_latlon):
             item = {
                 "autoContinue": True,
@@ -27,7 +26,7 @@ class QGCPlanExporter:
             }
             mission_items.append(item)
 
-        # 2. Estructura JSON completa requerida por QGC
+        # 2. Complete JSON structure required by QGC
         plan_dict = {
             "fileType": "Plan",
             "geoFence": {"circles": [], "polygons": [], "version": 2},
@@ -45,7 +44,7 @@ class QGCPlanExporter:
             "version": 1
         }
 
-        # 3. Guardar archivo
+        # 3. Save file
         with open(filename, 'w') as f:
             json.dump(plan_dict, f, indent=4)
-        print(f"Misión exportada exitosamente: {filename}")
+        print(f"✅ Mission exported successfully: {filename}")

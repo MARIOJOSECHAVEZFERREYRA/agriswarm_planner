@@ -9,7 +9,7 @@ from gui.styles import DARK_BLUE, ACCENT_GREEN, ACCENT_ORANGE, TEXT_WHITE, ACCEN
 class ReportWindow(QDialog):
     def __init__(self, comparison_data, resource_data, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Reporte de Misión y Logística - AgriSwarm")
+        self.setWindowTitle("Mission and Logistics Report - AgriSwarm")
         self.resize(900, 700)
         self.setStyleSheet(f"background-color: #ecf0f1; color: {DARK_BLUE};")
         
@@ -27,7 +27,7 @@ class ReportWindow(QDialog):
         self.create_comparison_cards(layout, comparison_data)
         
         # --- SECCION LOGISTICA ---
-        lbl_log = QLabel("PLANIFICACIÓN DE RECURSOS DE CAMPO")
+        lbl_log = QLabel("FIELD RESOURCE PLANNING")
         lbl_log.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {DARK_BLUE}; margin-top: 20px;")
         layout.addWidget(lbl_log)
         
@@ -37,7 +37,7 @@ class ReportWindow(QDialog):
         self.create_stops_table(layout, resource_data.get('stops', []))
         
         # --- FOOTER / EXPORT ---
-        btn_close = QPushButton("Cerrar")
+        btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.accept)
         btn_close.setStyleSheet(f"""
             QPushButton {{
@@ -53,19 +53,19 @@ class ReportWindow(QDialog):
         
         # Card 1: Ahorro Distancia
         dead_km = data.get('savings_km', 0)
-        card1 = self.create_metric_card("AHORRO DISTANCIA MUERTA", f"{dead_km:.2f} km", "Menos recorridos vacíos", positive=True)
+        card1 = self.create_metric_card("DEADHEAD DISTANCE SAVINGS", f"{dead_km:.2f} km", "Less empty runs", positive=True)
         container.addWidget(card1)
         
         # Card 2: Eficiencia
         eff = data.get('efficiency_gain_pct', 0)
-        card2 = self.create_metric_card("MEJORA EFICIENCIA", f"+{eff:.1f}%", "Tiempo productivo extra", positive=True)
+        card2 = self.create_metric_card("EFFICIENCY IMPROVEMENT", f"+{eff:.1f}%", "Extra productive time", positive=True)
         container.addWidget(card2)
         
         # Card 3: Comparativa Deadhead
         static_km = data.get('static_dead_km', 0)
         mobile_km = data.get('mobile_dead_km', 0)
-        txt = f"Estático: {static_km:.1f} km\nMóvil: {mobile_km:.1f} km"
-        card3 = self.create_metric_card("RECORRIDO NO PRODUCTIVO", txt, "Comparativa directa", positive=None)
+        txt = f"Static: {static_km:.1f} km\nMobile: {mobile_km:.1f} km"
+        card3 = self.create_metric_card("NON-PRODUCTIVE TRAVEL", txt, "Direct comparison", positive=None)
         container.addWidget(card3)
 
         parent_layout.addLayout(container)
@@ -110,20 +110,20 @@ class ReportWindow(QDialog):
         # Baterias
         packs = data.get('battery_packs', 0)
         l1 = QVBoxLayout()
-        l1.addWidget(QLabel("BATERÍAS FÍSICAS REQUERIDAS"))
+        l1.addWidget(QLabel("PHYSICAL BATTERIES REQUIRED"))
         lb_p = QLabel(f"{packs} Packs")
         lb_p.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {ACCENT_ORANGE};")
         l1.addWidget(lb_p)
-        l1.addWidget(QLabel("(Rotación de Carga Continua)"))
+        l1.addWidget(QLabel("(Continuous Charge Rotation)"))
         
         # Agua
         mix = data.get('total_mix_l', 0)
         l2 = QVBoxLayout()
-        l2.addWidget(QLabel("REQUERIMIENTO HÍDRICO TOTAL"))
-        lb_w = QLabel(f"{mix:.1f} Litros")
+        l2.addWidget(QLabel("TOTAL WATER REQUIREMENT"))
+        lb_w = QLabel(f"{mix:.1f} Liters")
         lb_w.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {ACCENT_BLUE};")
         l2.addWidget(lb_w)
-        l2.addWidget(QLabel("(Mezcla lista para aplicar)"))
+        l2.addWidget(QLabel("(Ready-to-apply mix)"))
         
         bl.addLayout(l1)
         
@@ -141,7 +141,7 @@ class ReportWindow(QDialog):
     def create_stops_table(self, parent_layout, stops):
         table = QTableWidget()
         table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["PARADA / MÓDULO", "ACCIÓN LOGÍSTICA", "NOTAS"])
+        table.setHorizontalHeaderLabels(["STOP / MODULE", "LOGISTICS ACTION", "NOTES"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         table.verticalHeader().setVisible(False)
         table.setStyleSheet(f"""

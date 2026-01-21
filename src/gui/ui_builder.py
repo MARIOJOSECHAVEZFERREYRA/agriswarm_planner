@@ -1,0 +1,186 @@
+"""
+UI Builder Module for AgriSwarm Planner
+Separates UI construction logic from the main application window.
+"""
+
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, 
+                              QFrame, QFormLayout, QDoubleSpinBox, QCheckBox)
+from PyQt6.QtCore import Qt
+from gui.styles import *
+from data import DroneDB
+
+
+class UIBuilder:
+    """Helper class to construct UI components for the main application window"""
+    
+    @staticmethod
+    def create_sidebar_header(layout):
+        """Create the branding header for the sidebar"""
+        lbl_brand = QLabel("AGRISWARM")
+        lbl_brand.setStyleSheet("font-size: 26px; color: #ecf0f1; letter-spacing: 2px; margin-bottom: 10px;")
+        lbl_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_brand)
+        UIBuilder.add_separator(layout)
+    
+    @staticmethod
+    def create_drone_selector(layout, on_change_callback):
+        """Create drone selection combo box"""
+        combo_drones = QComboBox()
+        combo_drones.addItems(DroneDB.get_drone_names())
+        combo_drones.setCurrentText("DJI Agras T30")
+        combo_drones.currentTextChanged.connect(on_change_callback)
+        layout.addWidget(combo_drones)
+        return combo_drones
+    
+    @staticmethod
+    def create_mission_parameters(layout):
+        """Create mission parameter controls (swath, tank, speed, etc.)"""
+        params_layout = QFormLayout()
+        params_layout.setSpacing(8)
+        
+        # 1. Work Width (Swath)
+        spin_swath = QDoubleSpinBox()
+        spin_swath.setRange(1.0, 20.0)
+        spin_swath.setSingleStep(0.5)
+        spin_swath.setSuffix(" m")
+        params_layout.addRow("Swath Width:", spin_swath)
+        
+        # 2. Tank
+        spin_tank = QDoubleSpinBox()
+        spin_tank.setRange(5.0, 100.0)
+        spin_tank.setSingleStep(1.0)
+        spin_tank.setSuffix(" L")
+        params_layout.addRow("Tank:", spin_tank)
+        
+        # 3. Speed
+        spin_speed = QDoubleSpinBox()
+        spin_speed.setRange(1.0, 15.0)
+        spin_speed.setSingleStep(0.5)
+        spin_speed.setSuffix(" m/s")
+        params_layout.addRow("Speed:", spin_speed)
+        
+        # 4. Application Rate
+        spin_app_rate = QDoubleSpinBox()
+        spin_app_rate.setRange(5.0, 50.0)
+        spin_app_rate.setSingleStep(1.0)
+        spin_app_rate.setValue(20.0)  # Default 20 L/ha
+        spin_app_rate.setSuffix(" L/ha")
+        params_layout.addRow("Application Rate:", spin_app_rate)
+        
+        # 5. Station Distance (Offset)
+        spin_truck_offset = QDoubleSpinBox()
+        spin_truck_offset.setRange(0.0, 50.0)
+        spin_truck_offset.setSingleStep(1.0)
+        spin_truck_offset.setSuffix(" m")
+        spin_truck_offset.setValue(0.0)
+        spin_truck_offset.setToolTip("Extra distance between field edge and truck route")
+        params_layout.addRow("Station Offset:", spin_truck_offset)
+        
+        layout.addLayout(params_layout)
+        
+        return {
+            'swath': spin_swath,
+            'tank': spin_tank,
+            'speed': spin_speed,
+            'app_rate': spin_app_rate,
+            'truck_offset': spin_truck_offset
+        }
+    
+    @staticmethod
+    def create_geometry_buttons(layout, on_clear, on_load):
+        """Create CLEAR and LOAD buttons"""
+        btn_grid = QHBoxLayout()
+        
+        btn_clear = QPushButton("CLEAR")
+        btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_clear.setStyleSheet(BTN_CLEAR_STYLE)
+        btn_clear.clicked.connect(on_clear)
+        
+        btn_load = QPushButton("LOAD")
+        btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_load.setStyleSheet(BTN_LOAD_STYLE)
+        btn_load.clicked.connect(on_load)
+        
+        btn_grid.addWidget(btn_clear)
+        btn_grid.addWidget(btn_load)
+        layout.addLayout(btn_grid)
+        
+        return btn_clear, btn_load
+    
+    @staticmethod
+    def create_custom_route_button(layout, on_toggle):
+        """Create the custom route drawing button"""
+        btn_draw_route = QPushButton("DRAW MOBILE ROUTE")
+        btn_draw_route.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_draw_route.setStyleSheet(
+            "background-color: #7f8c8d; color: white; border: none; "
+            "padding: 10px; font-weight: bold; border-radius: 4px;"
+        )
+        btn_draw_route.setCheckable(True)
+        btn_draw_route.clicked.connect(on_toggle)
+        layout.addWidget(btn_draw_route)
+        return btn_draw_route
+    
+    @staticmethod
+    def create_visual_options(layout, on_swath_toggled, on_static_toggled):
+        """Create visual option checkboxes"""
+        # Swath coverage checkbox
+        chk_swath = QCheckBox("Show Spray Coverage (Swath)")
+        chk_swath.setChecked(False)  # Disabled by default for performance
+        chk_swath.stateChanged.connect(on_swath_toggled)
+        layout.addWidget(chk_swath)
+        
+        # Static vs Mobile visualization toggle
+        chk_mode_static = QCheckBox("Visualize: Static Station")
+        chk_mode_static.setChecked(False)
+        chk_mode_static.setEnabled(False)  # Only active after calculation
+        chk_mode_static.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        chk_mode_static.stateChanged.connect(on_static_toggled)
+        layout.addWidget(chk_mode_static)
+        
+        return chk_swath, chk_mode_static
+    
+    @staticmethod
+    def create_action_buttons(layout, on_calculate, on_report, on_export):
+        """Create main action buttons (CALCULATE, REPORT, EXPORT)"""
+        UIBuilder.add_separator(layout)
+        
+        # Calculate button
+        btn_calc = QPushButton("CALCULATE ROUTE")
+        btn_calc.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_calc.setFixedHeight(60)
+        btn_calc.setStyleSheet(BTN_CALC_STYLE)
+        btn_calc.clicked.connect(on_calculate)
+        layout.addWidget(btn_calc)
+        
+        # Comparative report button
+        btn_report = QPushButton("VIEW COMPARATIVE REPORT")
+        btn_report.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_report.setFixedHeight(40)
+        btn_report.setStyleSheet(
+            f"background-color: {DARK_BLUE}; color: {ACCENT_ORANGE}; font-weight: bold; "
+            f"border: 1px solid {ACCENT_ORANGE}; border-radius: 4px;"
+        )
+        btn_report.clicked.connect(on_report)
+        btn_report.setEnabled(False)  # Enable only after calculation
+        layout.addWidget(btn_report)
+        
+        # Export button
+        btn_export = QPushButton("EXPORT .PLAN")
+        btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_export.setFixedHeight(45)
+        btn_export.setStyleSheet(BTN_EXPORT_STYLE)
+        btn_export.clicked.connect(on_export)
+        btn_export.setEnabled(False)
+        layout.addWidget(btn_export)
+        
+        return btn_calc, btn_report, btn_export
+    
+    @staticmethod
+    def add_separator(layout):
+        """Add a horizontal separator line"""
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Plain)
+        line.setStyleSheet("background-color: #455a64; max-height: 1px;")
+        layout.addWidget(line)
