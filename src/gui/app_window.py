@@ -203,6 +203,72 @@ class AgriSwarmApp(QMainWindow):
         """Handles interactive change of station distance (snap)"""
         if not self.polygon: return
 
+        # FAST UPDATE: If we have a calculated mission, re-run logistics ONLY
+        if self.best_path and not getattr(self, '_is_recalculating', False):
+            # Debounce/throttle could be useful, but let's try direct update
+            # Set flag to prevent recursion if needed
+            self._is_recalculating = True
+            try:
+                # Re-use the existing logic but pass the existing path
+                # Reuse overrides logic from run_optimization
+                overrides = {
+                    'swath': self.spin_swath.value(),
+                    'tank': self.spin_tank.value(),
+                    'speed': self.spin_speed.value(),
+                    'app_rate': self.spin_app_rate.value(),
+                }
+                
+                # Use current manual service points if available?
+                # If we are in "Result Mode", usually we default to auto buffer unless manual route was used.
+                # If manual route was used, we should snap it.
+                service_points = getattr(self.map_widget, 'service_route_points', [])
+                
+                # SNAP LOGIC (Copied/Refined)
+                # If we have manual points, we snap them first
+                if service_points and hasattr(self, 'original_manual_route') and self.original_manual_route:
+                     # Calculate NEW snapped points
+                     # Reuse existing snap logic below or rely on Controller's internal snap?
+                     # Controller snaps manually passed points using truck_offset.
+                     # So we can pass the ORIGINAL manual points and let the controller snap them with new offset!
+                     points_to_pass = self.original_manual_route
+                else:
+                     # Auto mode (Controller handles it based on poly)
+                     points_to_pass = []
+                
+                # CALL CONTROLLER (Fast Mode)
+                result = self.controller.run_mission_planning(
+                    polygon_points=self.points,
+                    drone_name=self.current_drone,
+                    overrides=overrides,
+                    truck_route_points=points_to_pass,
+                    truck_offset=value,
+                    use_mobile_station=True,
+                    precalculated_path=self.best_path # KEY: Reuse path!
+                )
+                
+                # Update State Partial
+                self.mission_cycles = result['mission_cycles']
+                self.last_mission_cycles = self.mission_cycles
+                self.static_cycles = result.get('static_cycles')
+                self.current_results = result
+                
+                # Redraw
+                use_static = self.chk_mode_static.isChecked()
+                self.map_widget.draw_results(
+                    self.polygon, 
+                    self.safe_polygon, 
+                    self.mission_cycles,
+                    use_static,
+                    road_geom=result.get('truck_route_line')
+                )
+                
+            except Exception as e:
+                print(f"Fast Update Failed: {e}")
+            finally:
+                self._is_recalculating = False
+            return
+
+        # MANUAL DRAWING SNAP (Original Logic)
         service_points = getattr(self.map_widget, 'service_route_points', [])
         
         # Ignore if we are drawing
@@ -222,7 +288,7 @@ class AgriSwarmApp(QMainWindow):
             self.map_widget.update()
             return
 
-        # Snap Logic
+        # Snap Logic (Visual Only)
         try:
              offset_poly = self.polygon.buffer(value, join_style=2)
              target_ring = None
@@ -316,6 +382,7 @@ class AgriSwarmApp(QMainWindow):
         
         spec = DroneDB.get_specs(drone_name)
         if spec:
+            self.current_specs = spec # Store for reports
             # Populate UI with defaults from DB
             
             # Swath Handling (New Smart Logic)
@@ -415,24 +482,26 @@ class AgriSwarmApp(QMainWindow):
             self.safe_polygon = result['safe_polygon']
             self.mission_cycles = result['mission_cycles']
             
+            # Store for Toggles / Export
+            self.last_mission_cycles = self.mission_cycles
+            self.static_cycles = result.get('static_cycles') # Ensure controller returns this
+            self.current_results = result
+            self.best_path = result.get('best_path') # Store LineString object!
+            
             # 6. Update UI (Visuals)
-            is_static = False # Could be a toggle in future
+            is_static = False 
             
             self.map_widget.draw_results(
                 self.polygon, 
                 self.safe_polygon, 
                 self.mission_cycles,
                 is_static,
-                road_geom=result['truck_route_line']
+                road_geom=result.get('truck_route_line')
             )
             
-            # 7. Show Report
-            metrics = result['metrics']
-            comparison = result['comparison']
-            resources = result['resources']
-            
-            # Show Comparative Report directly
-            self.show_report_panel(metrics, comparison, resources)
+            # 7. Update Buttons
+            self.update_ui_state()
+            self.statusBar().showMessage("Mission Calculated Successfully", 5000)
             
             # Enable Export
             self.btn_export.setEnabled(True)

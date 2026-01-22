@@ -27,6 +27,17 @@ class MobileStation:
         if ref_route:
             # LOGICA DE CADENA ABIERTA (Linear Route)
             boundary = ref_route
+            
+            # CHECK STATIC MODE
+            if self.truck_speed < 0.1:
+                 # Truck cannot move. Rendezvous is always at truck_start_pos.
+                 r_opt = Point(truck_start_pos)
+                 if not boundary.distance(r_opt) < 0.1:
+                      # Snap if needed (optional)
+                      pass
+                      
+                 return r_opt, 0.0, 0.0, [truck_start_pos]
+            
             point_exit = Point(p_drone_exit)
             
             # 1. R_opt (Proyeccion mas cercana en la linea)
@@ -59,6 +70,12 @@ class MobileStation:
         # Determine the truck path boundary
         boundary = self.get_road_boundary(polygon)
         
+        # CHECK STATIC MODE
+        if self.truck_speed < 0.1:
+                # Truck cannot move. Rendezvous is always at truck_start_pos.
+                r_opt = Point(truck_start_pos)
+                return r_opt, 0.0, 0.0, [truck_start_pos]
+                
         # 1. Encontrar R_opt (Proyeccion ortogonal sobre el borde)
         point_exit = Point(p_drone_exit)
         dist_projected = boundary.project(point_exit)

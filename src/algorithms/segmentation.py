@@ -38,46 +38,14 @@ class MissionSegmenter:
              self.max_endurance_min = float(self.specs.flight.flight_time_min['hover_loaded'].value)
         self.max_endurance_s = self.max_endurance_min * 60.0
 
-    def validate_pump(self):
-        """
-        Verifica si la bomba del dron soporta el caudal demandado.
-        :return: (bool, message, required_flow)
-        """
-        if not self.specs.spray or not self.specs.spray.max_flow_l_min:
-            return True, "No pump specs", 0
-            
-        req_flow_l_min = (self.rate_l_ha * self.speed_kmh * self.swath_width) / 600.0
-        max_flow = float(self.specs.spray.max_flow_l_min.value)
-        
-        if req_flow_l_min > max_flow:
-            return False, f"Pump overload! Req: {req_flow_l_min:.1f} L/min > Max: {max_flow}", req_flow_l_min
-            
-        return True, "OK", req_flow_l_min
 
     def _is_spraying(self, p1, p2, polygon):
-        """
-        Determina si un segmento es de fumigacion (Grid Line dentro del campo)
-        o de transito (Deadheading/Turn).
-        """
+        """Determines if segment is spraying (inside field) or transit (outside)."""
         line = LineString([p1[:2], p2[:2]])
         mid = line.interpolate(0.5, normalized=True)
-        
-        # Strict check for Inside
-        is_inside = polygon.buffer(1e-9).contains(mid)
-        if not is_inside:
-            return False
-            
-        # Heuristic: Turns usually run along the boundary and are short.
-        # We want to mark them as Transit (False) to avoid ugly "block" swaths on turns.
-        length = np.linalg.norm(np.array(p1[:2]) - np.array(p2[:2]))
-        dist_bound = polygon.boundary.distance(mid)
-        
-        # If segment is on/near boundary and short (relative to swath), assume it's a turn.
-        if dist_bound < 1.0 and length < self.swath_width * 2.5:
-            # print(f"DEBUG: Turn detected at {mid}, L={length:.1f}, DistB={dist_bound:.2f} -> Transit")
-            return False
-            
-        return True
+        return polygon.buffer(1e-9).contains(mid)
+
+
 
     def segment_path(self, polygon, raw_path, truck_polygon=None, start_point=None, truck_route_line=None):
         """
@@ -177,13 +145,13 @@ class MissionSegmenter:
                 cycles.append({
                     "type": "work",
                     "path": full_path,
-                    "segments": current_cycle_segments, # NEW METADATA
-                    "truck_start": truck_pos,
-                    "truck_end": r_point,
+                    "segments": current_cycle_segments,
+                    "visual_groups": self._compress_segments(current_cycle_segments), # NEW: Visual Optimization
+                    "swath_width": self.swath_width,
                     "truck_start": truck_pos,
                     "truck_end": r_point,
                     "truck_dist": dist_truck,
-                    "truck_path_coords": truck_path_list # Store Geometry
+                    "truck_path_coords": truck_path_list
                 })
                 
                 # RESET & SETUP NEW CYCLE
@@ -219,12 +187,18 @@ class MissionSegmenter:
              # Points
              # Note: current_cycle_points already tracked spray points. 
              # We just need to ensure the full path reflects the return.
-             full_path = [truck_pos] + current_cycle_points + [r_end_point]
+             # FIX: Include the end point of the last segment (p_last) to avoid cutting the corner
+             full_path = [truck_pos] + current_cycle_points
+             if p_last != full_path[-1]: 
+                 full_path.append(p_last)
+             full_path.append(r_end_point)
              
              cycles.append({
                     "type": "work",
                     "path": full_path,
                     "segments": current_cycle_segments,
+                    "visual_groups": self._compress_segments(current_cycle_segments), # NEW: Visual Optimization
+                    "swath_width": self.swath_width,
                     "truck_start": truck_pos,
                     "truck_end": r_end_point, 
                     "truck_dist": dist_truck_final,
@@ -232,3 +206,36 @@ class MissionSegmenter:
              })
              
         return cycles
+
+    def _compress_segments(self, segments):
+        """
+        Compresses adjacent segments of same type into continuous visual groups.
+        """
+        if not segments: return []
+        
+        groups = []
+        current_path = [segments[0]['p1'], segments[0]['p2']]
+        current_type = segments[0]['spraying']
+        
+        for i in range(1, len(segments)):
+            s = segments[i]
+            # Check continuity and type
+            # Assuming p1 == prev_p2 (continuity)
+            if s['spraying'] == current_type:
+                current_path.append(s['p2'])
+            else:
+                # Flush
+                groups.append({
+                    'path': current_path,
+                    'is_spraying': current_type
+                })
+                # Start new
+                current_path = [s['p1'], s['p2']]
+                current_type = s['spraying']
+                
+        # Flush last
+        groups.append({
+            'path': current_path,
+            'is_spraying': current_type
+        })
+        return groups

@@ -4,6 +4,7 @@ from algorithms.strategy import StrategyFactory
 from algorithms.margin import MarginReducer
 from algorithms.segmentation import MissionSegmenter
 from algorithms.mobile_station import MobileStation
+from algorithms.analysis import MissionAnalyzer
 from data import DroneDB
 
 class MissionController:
@@ -18,7 +19,8 @@ class MissionController:
 
     def run_mission_planning(self, polygon_points, drone_name, overrides, 
                              truck_route_points=None, truck_offset=0.0, 
-                             use_mobile_station=True, strategy_name="genetic"):
+                             use_mobile_station=True, strategy_name="genetic",
+                             precalculated_path=None):
         """
         Executes the full mission planning workflow.
         
@@ -30,6 +32,7 @@ class MissionController:
             truck_offset (float): Offset for truck route snapping.
             use_mobile_station (bool): Whether to calculate mobile station logistics.
             strategy_name (str): optimization strategy ("genetic" or "simple").
+            precalculated_path (LineString, optional): Existing path to reuse (skips optimization).
             
         Returns:
             dict: Mission results containing geometry, cycles, metrics, and compatibility info.
@@ -100,7 +103,6 @@ class MissionController:
                     snapped_points = []
                     for pt in truck_route_points:
                         p_obj = Point(pt)
-                        # Find nearest point on shell (projection)
                         proj_dist = shell_linear.project(p_obj)
                         snapped_pt = shell_linear.interpolate(proj_dist)
                         snapped_points.append((snapped_pt.x, snapped_pt.y))
@@ -111,19 +113,36 @@ class MissionController:
                     truck_route_line = LineString(truck_route_points)
             else:
                 truck_route_line = LineString(truck_route_points)
+        else:
+            # Auto Mode: Generate boundary for visualization only
+            if truck_offset > 0.1:
+                try:
+                    field_shell = polygon.buffer(truck_offset, join_style=2)
+                    truck_route_line = field_shell.exterior # LinearRing
+                except:
+                    pass
 
         # 5. Route Optimization (STRATEGY PATTERN)
-        optimizer = StrategyFactory.get_strategy(strategy_name)
-        print(f"Optimization Strategy: {strategy_name}")
+        best_path = None
+        best_angle = 0
         
-        opt_result = optimizer.optimize(
-            safe_polygon,
-            swath_width=real_swath, 
-            truck_route=truck_route_line
-        )
-        
-        best_angle = opt_result['angle']
-        best_path = LineString(opt_result['path']) if opt_result['path'] else None
+        if precalculated_path:
+            print("Using PRE-CALCULATED flight path (Skipping Optimization)")
+            best_path = precalculated_path
+            # Angle unknown/irrelevant if reusing path, or we could pass it. 
+            # For now assume 0 or keep previous.
+        else:
+            optimizer = StrategyFactory.get_strategy(strategy_name)
+            print(f"Optimization Strategy: {strategy_name}")
+            
+            opt_result = optimizer.optimize(
+                safe_polygon,
+                swath_width=real_swath, 
+                truck_route=truck_route_line
+            )
+            
+            best_angle = opt_result['angle']
+            best_path = LineString(opt_result['path']) if opt_result['path'] else None
         
         if not best_path:
              raise ValueError("Could not generate flight path with current settings.")
@@ -148,18 +167,6 @@ class MissionController:
         resource_data = {}
         
         if use_mobile_station:
-            # Helper for metrics
-            def calculate_metrics(cycles):
-                truck_km = sum(c.get('truck_dist', 0) for c in cycles) / 1000.0
-                # Approximate efficiency (needs deep segment analysis)
-                return {
-                    "truck_dist_km": truck_km,
-                    "dead_dist_km": 0.0,
-                    "efficiency_ratio": 0.8, # Mock
-                    "total_energy_Wh": 0.0,
-                    "total_mix_l": 0.0,
-                    "stops": len(cycles)
-                }
 
             # A. Mobile Calculation
             station_speed = 5.0 # Default truck speed
@@ -169,10 +176,9 @@ class MissionController:
             mission_cycles = segmenter.segment_path(
                 polygon=safe_polygon, 
                 raw_path=list(best_path.coords),
-                truck_polygon=safe_polygon,
+                truck_polygon=polygon, # Use OUTER polygon for truck/logistics
                 truck_route_line=truck_route_line
             )
-            full_metrics = calculate_metrics(mission_cycles)
             
             # B. Static Calculation (for comparison)
             if truck_route_line:
@@ -188,53 +194,24 @@ class MissionController:
                 raw_path=list(best_path.coords),
                 start_point=home_point
             )
-            static_metrics = calculate_metrics(static_cycles)
             
-            # 7. Generate Comparison Data
-            comparison_metrics = {
-                "static_dead_km": static_metrics['dead_dist_km'],
-                "mobile_dead_km": full_metrics['dead_dist_km'],
-                "savings_km": static_metrics['dead_dist_km'] - full_metrics['dead_dist_km'],
-                
-                "efficiency_static_pct": static_metrics['efficiency_ratio'],
-                "efficiency_mobile_pct": full_metrics['efficiency_ratio'],
-                "efficiency_gain_pct": full_metrics['efficiency_ratio'] - static_metrics['efficiency_ratio'],
-                
-                "static_truck_km": 0.0,
-                "mobile_truck_km": full_metrics.get('truck_dist_km', 0.0)
-            }
+            # 7. Generate Real Metrics via MissionAnalyzer
+            full_metrics = MissionAnalyzer.calculate_comprehensive_metrics(mission_cycles, polygon, specs)
             
-            # Resource Estimation
-            # Battery: Total Energy / Pack Capacity
-            total_energy = full_metrics.get('total_energy_Wh', 0)
-            pack_cap = 0
-            if specs.battery:
-                if specs.battery.energy_wh:
-                    pack_cap = float(specs.battery.energy_wh.value)
-                elif specs.battery.capacity_ah and specs.battery.voltage_v:
-                    pack_cap = float(specs.battery.capacity_ah.value) * float(specs.battery.voltage_v.value)
+            comparison_metrics = MissionAnalyzer.compare_missions(mission_cycles, static_cycles)
             
-            if pack_cap > 0:
-                packs_req = (total_energy / (pack_cap * 0.8)) # 80% DOD
-            else:
-                packs_req = 0
-            import math
-            packs_req = math.ceil(packs_req)
-            
-            resource_data = {
-                "total_mix_l": full_metrics.get('total_mix_l', 0),
-                "battery_packs": packs_req,
-                "stops": full_metrics.get('stops', [])
-            }
+            resource_data = MissionAnalyzer.plan_logistics(mission_cycles, specs)
 
         # Pack results
         return {
             "polygon": polygon,
             "safe_polygon": safe_polygon,
             "mission_cycles": mission_cycles,
+            "static_cycles": static_cycles if use_mobile_station else None, # Return static for comparison toggles
             "truck_route_line": truck_route_line,
             "metrics": full_metrics,
             "comparison": comparison_metrics,
             "resources": resource_data,
-            "best_angle": best_angle
+            "best_angle": best_angle,
+            "best_path": best_path
         }

@@ -47,4 +47,4 @@ class MissionExporter:
         # 3. Save file
         with open(filename, 'w') as f:
             json.dump(plan_dict, f, indent=4)
-        print(f"✅ Mission exported successfully: {filename}")
+        print(f"Mission exported successfully: {filename}")

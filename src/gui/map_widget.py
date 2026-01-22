@@ -234,9 +234,6 @@ class MapWidget(QGraphicsView):
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
             
-    
-
-
     def draw_service_route(self, is_temp=False):
         """Draws the service route (truck)"""
         # Clean previous items
@@ -379,7 +376,8 @@ class MapWidget(QGraphicsView):
             pen.setCosmetic(True)
             self.scene.addPolygon(poly_q, pen, brush).setZValue(0)
             
-            # 3. Permanent Labels (Restored)
+            
+            # 3. Field Boundary Labels (ALWAYS visible)
             self.draw_labels(list(polygon_geom.exterior.coords)[:-1])
             
             centroid = polygon_geom.centroid
@@ -409,23 +407,36 @@ class MapWidget(QGraphicsView):
             col = colors[cycle_idx % len(colors)]
             swath_width = cycle.get('swath_width', 5.0) # Default 5m
             
-            # NEW OPTIMIZED LOGIC: Use visual_groups instead of micro-segments
+            # NEW: Use visual_groups (pre-compressed segments by draw type)
             visual_groups = cycle.get('visual_groups', [])
             
             if visual_groups:
-                # Iterate over simplified visual groups (10-20 groups instead of 1000+ segments)
+                # Process compressed visual groups (MUCH faster than per-segment)
+                # Groups are already aggregated by type (spray vs return)
+                
+                # AGGREGATED RETURN LABEL LOGIC (Fix for overlapping labels)
+                cycle_return_total = 0.0
+                cycle_return_midpoint = None
+                
                 for group_idx, group in enumerate(visual_groups):
                     group_path = group.get('path', [])
                     is_spraying = group.get('is_spraying', False)
                     
-                    if len(group_path) < 2:
-                        continue
+                    if len(group_path) < 2: continue
                     
-                    # 1. Draw path line
+                    # Aggregate return distances for smart labeling
+                    if is_static and not is_spraying:
+                        ret_line = LineString(group_path)
+                        cycle_return_total += ret_line.length
+                        # Use first return segment's midpoint for label placement
+                        if cycle_return_midpoint is None:
+                            cycle_return_midpoint = ret_line.interpolate(0.5, normalized=True)
+                    
+                    # 1. Draw Line
                     qpath = QPainterPath()
                     qpath.moveTo(group_path[0][0], group_path[0][1])
-                    for p in group_path[1:]:
-                        qpath.lineTo(p[0], p[1])
+                    for point in group_path[1:]:
+                        qpath.lineTo(point[0], point[1])
                     
                     pen_group = QPen(QColor(col))
                     
@@ -437,17 +448,23 @@ class MapWidget(QGraphicsView):
                         pen_group.setStyle(Qt.PenStyle.DashLine)
                         pen_group.setWidth(2)
                         
-                        # Draw arrows for return paths
-                        if len(group_path) >= 2:
-                            # Arrow at midpoint
-                            mid_idx = len(group_path) // 2
-                            self.draw_arrow(group_path[mid_idx-1], group_path[mid_idx], col)
+                        # Draw arrows ONLY for return paths in static mode (NEVER on spray lines)
+                        if is_static and (is_spraying is False):
+                            # Draw single arrow at midpoint
+                            if len(group_path) >= 2:
+                                mid_idx = len(group_path) // 2
+                                if mid_idx > 0:
+                                    self.draw_arrow(group_path[mid_idx-1], group_path[mid_idx], col)
+                                else:
+                                    self.draw_arrow(group_path[0], group_path[1], col)
                     
                     pen_group.setCosmetic(True)
                     self.scene.addPath(qpath, pen_group).setZValue(10)
                     
+                    
                     # 2. Buffer for spray groups (if enabled)
-                    if self.show_swath and is_spraying and len(group_path) >= 2:
+                    # STRICT CHECK: Ensure it is explicitly True, not just Truthy
+                    if self.show_swath and (is_spraying is True) and (len(group_path) >= 2):
                         try:
                             # Create single buffer for entire group (much faster than per-segment)
                             line_geom = LineString(group_path)
@@ -473,149 +490,22 @@ class MapWidget(QGraphicsView):
                         
                         except Exception as e:
                             print(f"Warning: Failed to create buffer for group {group_idx}: {e}")
-                    
-                    # 3. STATIC MODE: Label return paths
-                    if is_static and not is_spraying and len(group_path) >= 2:
-                        # Calculate total distance of return path
-                        ret_line = LineString(group_path)
-                        d_total = ret_line.length
-                        
-                        if d_total > 10.0:  # Only significant returns
-                            # Label at midpoint
-                            mid_pt = ret_line.interpolate(0.5, normalized=True)
-                            self.draw_floating_label(mid_pt.x, mid_pt.y, f"{d_total:.0f} m")
+                
+                # STATIC MODE: Draw AGGREGATED return label (once per cycle)
+                if is_static and cycle_return_total > 10.0 and cycle_return_midpoint:
+                    self.draw_floating_label(
+                        cycle_return_midpoint.x, 
+                        cycle_return_midpoint.y, 
+                        f"{cycle_return_total:.0f} m"
+                    )
                 
                 # Process events every cycle to keep UI responsive
                 if (cycle_idx + 1) % 2 == 0:  # Every 2 cycles
                     from PyQt6.QtWidgets import QApplication
                     QApplication.processEvents()
-                    
-            # FALLBACK: Old segment-based rendering (if visual_groups not available)
-            segments_meta = cycle.get('segments', [])
-            
-            if segments_meta and not visual_groups:
-                # OLD LOGIC (kept for backward compatibility)
-                # This should rarely execute now
-                # OPTIMIZATION: Adaptive batch size based on total segments
-                total_segments = len(segments_meta)
                 
-                # More segments = smaller batches for better responsiveness
-                if total_segments > 500:
-                    batch_size = 25  # Large dataset: frequent UI updates
-                elif total_segments > 200:
-                    batch_size = 40  # Medium dataset
-                else:
-                    batch_size = 50  # Small dataset: less overhead
-                
-                # Iterate per individual segment to decide if we draw "thick" or "thin"
-                for seg_idx, seg in enumerate(segments_meta):
-                    p1 = seg['p1']
-                    p2 = seg['p2']
-                    is_spraying = seg['spraying']
-                    
-                    # Draw Center Line (Always, but style varies)
-                    pen_seg = QPen(QColor(col))
-                    
-                    # 1. Base line
-                    qseg = QPainterPath()
-                    qseg.moveTo(p1[0], p1[1])
-                    qseg.lineTo(p2[0], p2[1])
-                    
-                    if is_spraying:
-                        pen_seg.setWidth(2)
-                        pen_seg.setStyle(Qt.PenStyle.SolidLine)
-                    else:
-                        # Transit: Dashed + ARROWS
-                        pen_seg.setStyle(Qt.PenStyle.DashLine)
-                        pen_seg.setWidth(2)
-                        
-                        # Draw Arrow to show direction
-                        self.draw_arrow(p1, p2, col)
+            cycle_idx += 1
 
-                    pen_seg.setCosmetic(True)
-                    self.scene.addPath(qseg, pen_seg).setZValue(10)
-                    
-                    # 2. Buffer (Solo si Spraying y Habilitado)
-                    # OPTIMIZATION: Reduced resolution + early skip
-                    if self.show_swath and is_spraying:
-                        # Skip very short segments (< 1m) to reduce buffer count
-                        seg_length = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
-                        if seg_length >= 1.0:
-                            line_geom = LineString([p1[:2], p2[:2]])
-                            
-                            # CRITICAL OPTIMIZATION: Use resolution=4 (default is 16)
-                            # This reduces buffer vertices from ~32 to ~8 per segment
-                            swath_poly = line_geom.buffer(
-                                swath_width / 2.0, 
-                                cap_style=2,      # Flat caps
-                                join_style=2,     # Mitered joins
-                                resolution=4      # ✨ 4x fewer vertices
-                            )
-                            
-                            if swath_poly.geom_type == 'Polygon':
-                                polys = [swath_poly]
-                            else:
-                                polys = swath_poly.geoms
-                                
-                            for poly in polys:
-                                 qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
-                                 c = QColor(col)
-                                 c.setAlpha(150)
-                                 brush = QBrush(c)
-                                 pen_b = QPen(Qt.PenStyle.NoPen)
-                                 self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
-
-                    # 3. STATIC MODE: Label Return Segments (Non-Spraying)
-                    if is_static and not is_spraying:
-                        d_seg = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
-                        if d_seg > 10.0:
-                            mx = (p1[0] + p2[0]) / 2
-                            my = (p1[1] + p2[1]) / 2
-                            self.draw_floating_label(mx, my, f"{d_seg:.0f} m")
-                    
-                    # OPTIMIZATION: Batch processing with processEvents()
-                    # Keep UI responsive by processing events every N segments
-                    if (seg_idx + 1) % batch_size == 0:
-                        from PyQt6.QtWidgets import QApplication
-                        QApplication.processEvents()  # Allow UI to update
-
-            else:
-                # FALLBACK (Old Code)
-                # A. Draw Complete Buffer
-                if len(path) > 1 and self.show_swath:
-                    flight_line = LineString(path)
-                    # OPTIMIZATION: Use lower resolution for faster rendering
-                    swath_poly = flight_line.buffer(
-                        swath_width / 2.0, 
-                        cap_style=2, 
-                        join_style=2,
-                        resolution=4  # ✨ Reduce vertices
-                    )
-                    
-                    if swath_poly.geom_type == 'Polygon':
-                        polys = [swath_poly]
-                    else:
-                        polys = swath_poly.geoms # MultiPolygon
-                        
-                    for poly in polys:
-                        qpoly = QPolygonF([QPointF(x, y) for x, y in poly.exterior.coords])
-                        c = QColor(col)
-                        c.setAlpha(80) 
-                        brush = QBrush(c)
-                        pen_b = QPen(Qt.PenStyle.NoPen)
-                        self.scene.addPolygon(qpoly, pen_b, brush).setZValue(9)
-    
-                # B. Draw Center Line
-                qpath = QPainterPath()
-                qpath.moveTo(path[0][0], path[0][1])
-                for p in path[1:]:
-                    qpath.lineTo(p[0], p[1])
-                
-                pen = QPen(QColor(col))
-                pen.setWidth(2)
-                pen.setCosmetic(True)
-                self.scene.addPath(qpath, pen).setZValue(10)
-            
             # Cycle Start/End markers
             label_start = "S" if cycle_idx == 0 else f"R{cycle_idx}"
             label_end = "E" if cycle_idx == len(mission_cycles)-1 else f"R{cycle_idx+1}"
@@ -695,29 +585,38 @@ class MapWidget(QGraphicsView):
         item = MissionMarkerItem(x, y, text, color)
         self.scene.addItem(item)
 
-    def draw_arrow(self, p1, p2, color):
-        """Draws an arrow at the midpoint of the segment to indicate direction (Map Units)."""
+    def draw_arrow(self, p1, p2, color, check_len=True):
+        """Draws an arrow. check_len=False skips the minimum length check."""
         mx = (p1[0] + p2[0]) / 2
         my = (p1[1] + p2[1]) / 2
         
         dx = p2[0] - p1[0]
         dy = p2[1] - p1[1]
-        length = math.sqrt(dx*dx + dy*dy)
-        if length < 15.0: return # Don't draw arrows on short segments
-
+        
+        if check_len:
+            length = math.sqrt(dx*dx + dy*dy)
+            if length < 5.0: return
+        
         angle = math.atan2(dy, dx)
+        # ... rest of drawing logic reused ...
         
         # Geometry in PIXELS (Fixed Screen Size)
         psize = 12
         
         # Position Logic (Relative):
-        # Place arrow at 60% of the segment (Slightly forward).
-        # This resolves overlap (0.6 vs 0.4) without pushing it to the ends.
-        t = 0.60
-            
-        mx = p1[0] + dx * t
-        my = p1[1] + dy * t
+        # Place arrow at 60% of the segment (Slightly forward) if we calculate from scratch.
+        # But if we use draw_arrows_interpolated, p1/p2 are tiny segments around the center.
+        # So we just place it at p1 (the interpolated point).
         
+        # To avoid duplicating logic, let's just use p1 as center if check_len is False
+        if not check_len:
+             mx, my = p1[0], p1[1]
+        else:
+             # Classic midpoint logic
+             t = 0.60
+             mx = p1[0] + dx * t
+             my = p1[1] + dy * t
+
         # Triangle pointing Right (+X), Centered on Centroid (0,0)
         # Shifted coords to align visual center with pivot
         head_px = QPolygonF([
@@ -732,10 +631,6 @@ class MapWidget(QGraphicsView):
         
         # Transform 
         # 1. Rotation (Degrees)
-        # NOTE: View uses scale(10, -10) (Y-flip). 
-        # Screen Y is Down, Scene Y is Up. 
-        # Scene Angle +45 (Up-Right) -> Screen Angle -45 (Up-Right).
-        # Must NEGATE the angle for ItemIgnoresTransformations items.
         arrow_item.setRotation(-math.degrees(angle))
         
         # 2. Position (Scene Coords)
@@ -745,6 +640,7 @@ class MapWidget(QGraphicsView):
         arrow_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
         
         arrow_item.setZValue(12) 
+
         self.scene.addItem(arrow_item)
 
     def draw_labels(self, points):
@@ -759,6 +655,10 @@ class MapWidget(QGraphicsView):
             p2 = points[0] if i == len(points)-1 else points[i+1]
             
             dist = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
+            
+            # Filter small segments (e.g. < 5m) to avoid clutter
+            if dist < 5.0: continue
+            
             mid_x = (p1[0] + p2[0]) / 2
             mid_y = (p1[1] + p2[1]) / 2
             
@@ -785,39 +685,6 @@ class MapWidget(QGraphicsView):
             angle = math.atan2(ny, nx)
             
             self.draw_floating_label(mid_x, mid_y, f"{dist:.1f} m", angle=angle)
-
-    def draw_cycle_label(self, x, y, text):
-        """Draws a small label for the cycle (C1, C2...)"""
-        # Convert newlines to breaks
-        html_text = text.replace('\n', '<br>')
-        
-        qtext = QGraphicsTextItem()
-        font = QFont("Arial", 10, QFont.Weight.Bold)
-        qtext.setFont(font)
-        
-        # Centering via HTML
-        qtext.setHtml(f"<div style='text-align: center;'>{html_text}</div>")
-        
-        # Center item on origin
-        rect = qtext.boundingRect()
-        rect_center_off_x = -rect.width() / 2
-        rect_center_off_y = -rect.height() / 2
-        qtext.setPos(rect_center_off_x, rect_center_off_y)
-        
-        # Background
-        bg = QGraphicsRectItem(rect)
-        bg.setBrush(QBrush(QColor(255, 255, 255, 200))) 
-        bg.setPen(QPen(Qt.PenStyle.NoPen))
-        bg.setPos(rect_center_off_x, rect_center_off_y)
-        
-        group = QGraphicsItemGroup()
-        group.addToGroup(bg)
-        group.addToGroup(qtext)
-        
-        group.setPos(x, y) # Position at centroid
-        group.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations) # Scale independent
-        group.setZValue(20) # Top
-        self.scene.addItem(group)
 
     def draw_floating_label(self, x, y, text, is_area=False, angle=None):
         # Check cache for overlaps (only for distance labels, to show x2)
@@ -878,10 +745,8 @@ class MapWidget(QGraphicsView):
         
         self.scene.addItem(group)
         
-
-
-
-    # --- EVENTOS ---
+    # --- EVENTS ---
+    
     def wheelEvent(self, event: QWheelEvent):
         factor = 1.2
         if event.angleDelta().y() > 0: self.scale(factor, factor)
@@ -1070,8 +935,6 @@ class MapWidget(QGraphicsView):
                 
         elif event.button() == Qt.MouseButton.RightButton:
             self.map_right_clicked.emit(scene_pos.x(), scene_pos.y())
-
-
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         super().mouseReleaseEvent(event)

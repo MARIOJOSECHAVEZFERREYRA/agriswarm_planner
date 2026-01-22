@@ -60,8 +60,15 @@ def main():
         print("\nOptimization Complete.")
         print(f"Best Angle: {result.get('best_angle', 0):.2f}°")
         
+        metrics = result.get('metrics', {}) # Define EARLY for verification use
+        
         cycles = result.get('mission_cycles', [])
         print(f"Total Cycles: {len(cycles)}")
+        
+        if 'best_path' in result:
+             print(f"SUCCESS: best_path present")
+        else:
+             print("FAILURE: best_path NOT found")
         
         metrics = result.get('metrics', {})
         print(f"Total Dead Distance: {metrics.get('dead_dist_km', 0):.2f} km")

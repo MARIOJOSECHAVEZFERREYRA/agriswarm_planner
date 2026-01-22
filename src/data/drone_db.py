@@ -111,4 +111,4 @@ class DroneDB:
             
         # 3. Critical logic: The larger of the two
         margin = max(physical_radius, spray_radius) + buffer_gps
-        return round(margin, 2)
+        return round(margin, 2) 
