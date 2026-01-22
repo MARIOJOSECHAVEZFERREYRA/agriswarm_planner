@@ -171,7 +171,7 @@ class MissionController:
             # A. Mobile Calculation
             station_speed = 5.0 # Default truck speed
             station = MobileStation(truck_speed_mps=station_speed)
-            segmenter = MissionSegmenter(specs, station, target_rate_l_ha=app_rate, work_speed_kmh=speed_kmh)
+            segmenter = MissionSegmenter(specs, station, target_rate_l_ha=app_rate, work_speed_kmh=speed_kmh, swath_width=real_swath)
             
             mission_cycles = segmenter.segment_path(
                 polygon=safe_polygon, 
@@ -187,7 +187,7 @@ class MissionController:
                 home_point = best_path.coords[0]
                 
             static_station = MobileStation(truck_speed_mps=0)
-            static_segmenter = MissionSegmenter(specs, static_station, target_rate_l_ha=app_rate, work_speed_kmh=speed_kmh)
+            static_segmenter = MissionSegmenter(specs, static_station, target_rate_l_ha=app_rate, work_speed_kmh=speed_kmh, swath_width=real_swath)
             
             static_cycles = static_segmenter.segment_path(
                 polygon=safe_polygon,

@@ -7,6 +7,26 @@ ACCENT_ORANGE = "#f39c12"
 ACCENT_RED = "#e74c3c"
 ACCENT_BLUE = "#3498db"
 
+# Map Colors
+MAP_FIELD_BORDER = "#2ecc71"
+MAP_FIELD_FILL = "#abebc6" # Lighter green for fill
+
+MAP_MARKER_START = "#2ecc71" # Green
+MAP_MARKER_END = "#e74c3c"   # Red
+MAP_MARKER_TRUCK = "#f39c12" # Orange
+
+MAP_ROUTE_TRUCK = "#e67e22"  # Orange dashed line
+
+# High contrast cycle colors
+MAP_CYCLE_COLORS = [
+    '#2980b9', # Blue
+    '#8e44ad', # Purple
+    '#16a085', # Teal
+    '#d35400', # Orange
+    '#2c3e50', # Dark Blue
+    '#c0392b'  # Red
+]
+
 SIDEBAR_STYLE = f"""
     QWidget {{
         background-color: {DARK_BLUE};

@@ -4,16 +4,18 @@ import numpy as np
 
 class MobileStation:
     """
-    Implementacion de la Sinergia Dron-Camion.
-    Basado en la restriccion geometrica: P_truck en el borde del poligono.
+    Implementation of Drone-Truck Synergy.
+    Based on the geometric constraint: P_truck on the polygon boundary.
+    
+    [Image of drone and truck cooperative rendezvous concept]
     """
 
     def __init__(self, truck_speed_mps=5.0, truck_offset_m=0.0):
-        self.truck_speed = truck_speed_mps # Velocidad media del camion
-        self.truck_offset_m = truck_offset_m # Distancia del ruta al borde
+        self.truck_speed = truck_speed_mps # Average truck speed
+        self.truck_offset_m = truck_offset_m # Distance from route to boundary
 
     def get_road_boundary(self, polygon: Polygon):
-        """Devuelve el anillo de la ruta del camion (borde + offset)"""
+        """Returns the ring of the truck route (boundary + offset)"""
         if self.truck_offset_m > 0:
             limit_poly = polygon.buffer(self.truck_offset_m, join_style=2)
             return limit_poly.exterior
@@ -21,11 +23,11 @@ class MobileStation:
 
     def calculate_rendezvous(self, polygon: Polygon, p_drone_exit: tuple, truck_start_pos: tuple, ref_route: LineString = None):
         """
-        Calcula el punto de encuentro optimo (R_opt) y la logistica.
-        Si ref_route es != None, usa esa LineString (camino abierto) en lugar del perimetro (anillo).
+        Calculates the optimal rendezvous point (R_opt) and logistics.
+        If ref_route is != None, uses that LineString (open path) instead of the perimeter (ring).
         """
         if ref_route:
-            # LOGICA DE CADENA ABIERTA (Linear Route)
+            # OPEN CHAIN LOGIC (Linear Route)
             boundary = ref_route
             
             # CHECK STATIC MODE
@@ -40,24 +42,25 @@ class MobileStation:
             
             point_exit = Point(p_drone_exit)
             
-            # 1. R_opt (Proyeccion mas cercana en la linea)
+            # 1. R_opt (Nearest projection on the line)
+            # [Image of orthogonal projection of point onto line]
             dist_projected = boundary.project(point_exit)
             r_opt = boundary.interpolate(dist_projected)
             
-            # 2. Ruta Camion (Lineal, sin vueltas)
+            # 2. Truck Route (Linear, no turns)
             start_dist = boundary.project(Point(truck_start_pos))
             target_dist = dist_projected
             
             truck_travel_dist = abs(target_dist - start_dist)
             
-            # Geometria del camino
+            # Path geometry
             if truck_travel_dist > 0.1:
-                # Substring siempre devuelve en orden de la linea base
+                # Substring always returns in base line order
                 params = sorted([start_dist, target_dist])
                 path_geom = substring(boundary, params[0], params[1])
                 path_final_coords = list(path_geom.coords)
                 
-                # Invertir si vamos "hacia atras" respecto a la definicion de la linea
+                # Invert if we are going "backwards" relative to line definition
                 if start_dist > target_dist:
                     path_final_coords = path_final_coords[::-1]
             else:
@@ -66,7 +69,7 @@ class MobileStation:
             truck_time_s = truck_travel_dist / self.truck_speed if self.truck_speed > 0 else float('inf')
             return r_opt, truck_travel_dist, truck_time_s, path_final_coords
 
-        # LOGICA DE ANILLO CERRADO (Perimetro)
+        # CLOSED LOOP LOGIC (Perimeter)
         # Determine the truck path boundary
         boundary = self.get_road_boundary(polygon)
         
@@ -76,17 +79,17 @@ class MobileStation:
                 r_opt = Point(truck_start_pos)
                 return r_opt, 0.0, 0.0, [truck_start_pos]
                 
-        # 1. Encontrar R_opt (Proyeccion ortogonal sobre el borde)
+        # 1. Find R_opt (Orthogonal projection onto the boundary)
         point_exit = Point(p_drone_exit)
         dist_projected = boundary.project(point_exit)
         r_opt = boundary.interpolate(dist_projected)
         
-        # 2. Calcular ruta del Camion sobre el perimetro
+        # 2. Calculate Truck Route on the perimeter
         start_dist = boundary.project(Point(truck_start_pos))
         target_dist = dist_projected 
         total_len = boundary.length
         
-        # Path 1: CCW (Adelante en el anillo)
+        # Path 1: CCW (Forward in the ring)
         if start_dist <= target_dist:
             path_ccw_geom = substring(boundary, start_dist, target_dist)
         else:
@@ -98,7 +101,8 @@ class MobileStation:
             
         len_ccw = path_ccw_geom.length
         
-        # Path 2: CW (Atras en el anillo) -> Calculamos Target->Start (CCW) y lo invertimos
+        # Path 2: CW (Backward in the ring) -> We calculate Target->Start (CCW) and reverse it
+        # [Image of clockwise vs counter-clockwise path planning on ring]
         if target_dist <= start_dist:
             path_cw_rev = substring(boundary, target_dist, start_dist)
         else:
@@ -109,24 +113,24 @@ class MobileStation:
             
         len_cw = path_cw_rev.length
         
-        # Elegir el mas corto
+        # Choose the shortest path
         if len_ccw <= len_cw:
             truck_travel_dist = len_ccw
             path_final_coords = list(path_ccw_geom.coords)
         else:
             truck_travel_dist = len_cw
-            # Invertir coordenadas para ir Start->Target
+            # Invert coordinates to go Start->Target
             path_final_coords = list(path_cw_rev.coords)[::-1]
 
-        # 3. Sincronizacion
+        # 3. Synchronization
         truck_time_s = truck_travel_dist / self.truck_speed if self.truck_speed > 0 else float('inf')
         
         return r_opt, truck_travel_dist, truck_time_s, path_final_coords
 
     def check_feasibility(self, truck_time_s, drone_endurance_s):
         """
-        Verifica si el camion llega antes que el dron se caiga.
+        Verifies if the truck arrives before the drone falls.
         """
-        # Margen de seguridad (ej. 1 minuto)
+        # Safety margin (e.g., 1 minute)
         margin_s = 60.0 
         return truck_time_s < (drone_endurance_s - margin_s)

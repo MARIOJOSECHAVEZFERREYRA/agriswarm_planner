@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt, QPointF, pyqtSignal, QRectF
 from PyQt6.QtGui import QPen, QBrush, QColor, QFont, QPainter, QPolygonF, QWheelEvent, QMouseEvent, QPainterPath
 import math
 from shapely.geometry import LineString, Polygon as ShapelyPoly
+from .styles import MAP_FIELD_BORDER, MAP_FIELD_FILL, MAP_MARKER_START, MAP_MARKER_END, MAP_MARKER_TRUCK, MAP_ROUTE_TRUCK, MAP_CYCLE_COLORS
 
 class MissionMarkerItem(QGraphicsItem):
     """
@@ -25,9 +26,9 @@ class MissionMarkerItem(QGraphicsItem):
         else: self.full_text = label
         
         # Specific styles
-        if label == "S": self.color = QColor("#2ecc71") # Green
-        if label == "E": self.color = QColor("#e74c3c") # Red
-        if label.startswith("R"): self.color = QColor("#f39c12") # Orange for truck stops
+        if label == "S": self.color = QColor(MAP_MARKER_START)
+        if label == "E": self.color = QColor(MAP_MARKER_END)
+        if label.startswith("R"): self.color = QColor(MAP_MARKER_TRUCK)
 
     def boundingRect(self):
         # Approximate drawing area (marker + text bubble)
@@ -360,7 +361,7 @@ class MapWidget(QGraphicsView):
              # Ensure we iterate coords correctly.
              poly_r = QPolygonF([QPointF(x, y) for x, y in road_geom.coords])
              
-             pen_r = QPen(QColor('#e67e22')) # Carrot Orange
+             pen_r = QPen(QColor(MAP_ROUTE_TRUCK)) # Truck Route
              pen_r.setStyle(Qt.PenStyle.DashLine)
              pen_r.setWidth(1)
              pen_r.setCosmetic(True)
@@ -371,7 +372,7 @@ class MapWidget(QGraphicsView):
         if polygon_geom:
             poly_q = QPolygonF([QPointF(x, y) for x, y in polygon_geom.exterior.coords])
             brush = QBrush(QColor(46, 204, 113, 50))
-            pen = QPen(QColor('#27ae60'))
+            pen = QPen(QColor(MAP_FIELD_BORDER))
             pen.setWidth(3)
             pen.setCosmetic(True)
             self.scene.addPolygon(poly_q, pen, brush).setZValue(0)
@@ -393,7 +394,7 @@ class MapWidget(QGraphicsView):
             self.scene.addPolygon(poly_s, pen_s, QBrush(Qt.BrushStyle.NoBrush)).setZValue(2)
 
         # Color palette for cycles
-        colors = ['#2980b9', '#8e44ad', '#16a085', '#d35400', '#2c3e50', '#c0392b']
+        colors = MAP_CYCLE_COLORS
         
         cycle_idx = 0
         drawn_segments_history = {} # Key: ( (x1,y1), (x2,y2) ) -> Count
@@ -503,83 +504,32 @@ class MapWidget(QGraphicsView):
                 if (cycle_idx + 1) % 2 == 0:  # Every 2 cycles
                     from PyQt6.QtWidgets import QApplication
                     QApplication.processEvents()
-                
-            cycle_idx += 1
 
-            # Cycle Start/End markers
-            label_start = "S" if cycle_idx == 0 else f"R{cycle_idx}"
+            # Cycle End marker
             label_end = "E" if cycle_idx == len(mission_cycles)-1 else f"R{cycle_idx+1}"
             
-            # Only draw if they don't overlap too much or specific logic
-            # self.draw_mission_marker(path[0][0], path[0][1], col, label_start)
-            # The end point of a cycle is usually the refill point of the next one
-            self.draw_mission_marker(path[-1][0], path[-1][1], '#e74c3c', label_end) # Red for end/refill
+            self.draw_mission_marker(path[-1][0], path[-1][1], MAP_MARKER_END, label_end)
 
             # 2. Draw Truck Route (if exists for this cycle)
             if truck_path_list and len(truck_path_list) > 1:
                 tpath = QPainterPath()
-                
-                # --- COLOR GRADIENT LOGIC ---
-                # En lugar de desplazar espacialmente, cambiamos el color para indicar "capas" de tiempo.
-                # Base: Naranja (#e67e22). 
-                # Cada vez que pasamos por el mismo sitio, oscurecemos o cambiamos el tono.
-                
-                p_start = truck_path_list[0]
-                p_end = truck_path_list[-1]
-                
-                # Relax precision to detect overlaps
-                # Using integers (meters) is enough to know if it's "the same segment"
-                # Or even round to 0 decimals.
-                k1 = (int(p_start[0]), int(p_start[1]))
-                k2 = (int(p_end[0]), int(p_end[1]))
-                
-                # Order so that A->B is equal to B->A
-                segment_key = tuple(sorted((k1, k2)))
-                
-                # Check fuzzy match against existing keys?
-                # For now try with rigid integer keys.
-                
-                overlap_count = drawn_segments_history.get(segment_key, 0)
-                drawn_segments_history[segment_key] = overlap_count + 1
-                
-                # Build Path (Direct, CENTERED, no spatial offset)
                 tpath.moveTo(truck_path_list[0][0], truck_path_list[0][1])
                 for p in truck_path_list[1:]:
                     tpath.lineTo(p[0], p[1])
                 
-                # Calculate Color - HIGH CONTRAST PALETTE
-                # 0: Naranja (Base)
-                # 1: Rojo (Ida y Vuelta / Trafico Medio)
-                # 2: Morado (Trafico Alto)
-                # 3+: Black (Saturated)
-                
-                if overlap_count == 0:
-                    pen_color = QColor('#e67e22') # Orange
-                    width = 3
-                elif overlap_count == 1:
-                    pen_color = QColor('#e74c3c') # Bright Red
-                    width = 3
-                elif overlap_count == 2:
-                    pen_color = QColor('#8e44ad') # Purple
-                    width = 4
-                else:
-                    pen_color = QColor('#000000') # Black
-                    width = 4
-
-                pen_t = QPen(pen_color) 
+                # Simple consistent style for truck route
+                pen_t = QPen(QColor(MAP_ROUTE_TRUCK)) # Orange
                 pen_t.setStyle(Qt.PenStyle.DashLine)
-                pen_t.setWidth(width) 
+                pen_t.setWidth(3) 
                 pen_t.setCosmetic(True)
-                self.scene.addPath(tpath, pen_t).setZValue(5 + overlap_count) # Put new layers on top
+                self.scene.addPath(tpath, pen_t).setZValue(5)
             
-
-
             cycle_idx += 1
             
         # Global Start Marker
         if mission_cycles and mission_cycles[0].get('path'):
             p0 = mission_cycles[0]['path'][0]
-            self.draw_mission_marker(p0[0], p0[1], '#2ecc71', "S")
+            self.draw_mission_marker(p0[0], p0[1], MAP_MARKER_START, "S")
 
     def draw_mission_marker(self, x, y, color, text):
         item = MissionMarkerItem(x, y, text, color)

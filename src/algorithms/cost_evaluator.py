@@ -3,27 +3,29 @@ import numpy as np
 
 class RouteCostEvaluator:
     """
-    Evaluador de costos cooperativos (Dron + Camión).
-    Desacoplado para uso en GA y validación manual.
+    Cooperative cost evaluator (Drone + Truck).
+    Decoupled for use in GA (Genetic Algorithms) and manual validation.
     """
 
     @staticmethod
     def calculate_perimeter_distance(polygon: Polygon, p1: tuple, p2: tuple) -> float:
         """
-        Calcula la distancia mas corta viajando por el EXTERIOR del poligono.
-        Asume que el camion se mueve por el borde (o un offset del borde).
+        Calculates the shortest distance traveling along the EXTERIOR of the polygon.
+        Assumes the truck moves along the boundary (or a boundary offset).
+        
+        
         """
         ring = polygon.exterior
         
-        # Proyectar puntos al anillo (para asegurar que esten en el borde)
+        # Project points to the ring (to ensure they are on the boundary)
         d1 = ring.project(Point(p1))
         d2 = ring.project(Point(p2))
         
-        # Distancia lineal a lo largo del anillo
+        # Linear distance along the ring
         dist_linear = abs(d1 - d2)
         total_length = ring.length
         
-        # La distancia mas corta en un anillo es min(arco, total - arco)
+        # The shortest distance on a ring is min(arc, total - arc)
         shortest_dist = min(dist_linear, total_length - dist_linear)
         
         return shortest_dist
@@ -31,19 +33,20 @@ class RouteCostEvaluator:
     @staticmethod
     def calculate_total_truck_cost(polygon: Polygon, drone_path_segments: list) -> float:
         """
-        Calcula el costo total del camion sumando los movimientos necesarios
-        para conectar los segmentos de vuelo del dron.
+        Calculates the total truck cost by summing the movements necessary
+        to connect the drone flight segments.
         
-        :param drone_path_segments: Lista de listas de puntos [[p_start1, ..., p_end1], [p_start2, ..., p_end2]]
-                                    donde cada sublista es una ruta dentro de un sub-poligono.
-        :return: Distancia total recorrida por el camion (metros)
+        :param drone_path_segments: List of point lists [[p_start1, ..., p_end1], [p_start2, ..., p_end2]]
+                                    where each sublist is a route within a sub-polygon.
+        :return: Total distance traveled by the truck (meters)
         """
         if len(drone_path_segments) < 2:
             return 0.0
             
         total_truck_dist = 0.0
         
-        # Iterar entre el final de un segmento y el inicio del siguiente
+        # Iterate between the end of one segment and the start of the next
+        # 
         for i in range(len(drone_path_segments) - 1):
             segment_current = drone_path_segments[i]
             segment_next = drone_path_segments[i+1]

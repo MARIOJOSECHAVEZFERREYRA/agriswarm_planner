@@ -1,119 +1,139 @@
-# AgriSwarm Planner: Coverage Path Planning (CPP)
+# AgriSwarm Planner
 
-## 1. Abstract
-Implementación de un sistema avanzado de Planificación de Rutas de Cobertura (CPP) para UAVs de fumigación agrícola, diseñado para operar en polígonos arbitrarios (convexos y cóncavos). Basado en la metodología de **Li et al. (2023)**, este sistema integra algoritmos de reducción de márgenes, detección topológica de concavidades y optimización de dirección de vuelo mediante Algoritmos Genéticos (GA).
+**Mission Planning System for Cooperative Agricultural Robotics**
 
-El objetivo principal es minimizar una función de costo híbrida que pondera la distancia total de vuelo y la tasa de sobre-cobertura (desperdicio de pesticida).
+AgriSwarm Planner is a desktop application developed to plan, optimize, and visualize cooperative missions involving Agricultural UAVs (Unmanned Aerial Vehicles) and Mobile Charging Stations (UGVs).
 
----
+This software serves as a practical implementation and validation of advanced coverage path planning (CPP) algorithms for precision agriculture.
 
-## 2. Modelado Matemático Completo
+![AgriSwarm Screenshot](assets/img/ss1.jpg)
 
-La implementación sigue estrictamente las 4 fases matemáticas propuestas en el paper de referencia.
+![AgriSwarm Screenshot](assets/img/ss2.jpg)
 
-### 2.1. Fase 1: Reducción de Márgenes (Margin Reduction)
-Para evitar la aspersión fuera de los límites, el polígono original se contrae una distancia $h$.
-Cada vértice $D_i$ se desplaza hacia el interior a una nueva posición $D'_i$.
+## Scientific Basis
 
-* [cite_start]**Vector de Dirección de Contracción ($\vec{C}$):** Suma normalizada de los vectores de los lados adyacentes[cite: 585].
-    $$
-    \vec{C} = \frac{\vec{D_i D_{i-1}}}{|\vec{D_i D_{i-1}}|} + \frac{\vec{D_i D_{i+1}}}{|\vec{D_i D_{i+1}}|} \tag{1}
-    $$
+The core algorithms implemented in this project are strictly based on the methodologies proposed in the following research papers:
 
-* [cite_start]**Ángulo Interior ($\theta$):** Cálculo del ángulo del vértice[cite: 616].
-    $$
-    \theta = \arccos \left( \frac{\vec{D_i D_{i-1}}}{|\vec{D_i D_{i-1}}|} \cdot \frac{\vec{D_i D_{i+1}}}{|\vec{D_i D_{i+1}}|} \right) \tag{2}
-    $$
 
-* [cite_start]**Magnitud del Desplazamiento:** Distancia euclidiana del nuevo vértice al original para garantizar un margen $h$ perpendicular [cite: 618-620].
-    $$
-    |\vec{D_i D'_i}| = \frac{h}{\sin(\theta / 2)} \tag{3}
-    $$
+1.  **"Coverage Path Planning Method for Agricultural Spraying UAV in Arbitrary Polygon Area"**
+    *   *Implementation:* Concave Polygon Decomposition and Convex Boustrophedon Path Generation (Phase 1-3).
+    *   *Key Contribution:* Enabling efficient flight operations in irregulary shaped fields by decomposing them into optimal convex sub-regions.
 
-### 2.2. Fase 2: Geometría de Vuelo en Polígonos Convexos
-Para generar la ruta en zig-zag (Boustrophedon) con un ángulo de cabecera $\psi$:
+2.  **"Coverage Path Planning Optimization of Heterogeneous UAVs Group for Precision Agriculture"**
+    *   *Implementation:* Cooperative logistics and resource synchronization (Phase 4).
+    *   *Key Contribution:* Integrating a mobile ground station to minimize non-productive flight time (deadheading) and optimize battery/tank swap cycles.
 
-* [cite_start]**Ecuación de Frontera:** Define los límites del área operativa reducida[cite: 636].
-    $$
-    (y - y_{D'_i})(x_{D'_i} - x_{D'_{i-1}}) = (x - x_{D'_i})(y_{D'_i} - y_{D'_{i-1}}) \tag{4}
-    $$
+## Key Features
 
-* [cite_start]**Generación de Waypoints:** Intersección de las líneas de ruta $r_i$ (separadas por ancho $d$) con la frontera[cite: 641].
-    $$
-    \begin{cases} 
-    y = y_{min} + r_i \cdot d/2 \\ 
-    (y - y_{D'_i})(x_{D'_i} - x_{D'_{i-1}}) = (x - x_{D'_i})(y_{D'_i} - y_{D'_{i-1}}) 
-    \end{cases} \tag{5}
-    $$
+### Advanced Path Planning
+-   **Convex Decomposition**: Implements a recursive algorithm to decompose arbitrary concave polygons into convex sub-regions, eliminating Type-1 and Type-2 concavities that obstruct efficient flight paths.
+-   **Optimal Flight Direction**: utilizes a Genetic Algorithm (GA) to determine the optimal sweep angle for each sub-region, minimizing total turning maneuvers and flight distance.
+-   **Boustrophedon Paths**: Generates continuous back-and-forth coverage paths optimized for the kinematic constraints of agricultural drones.
 
-* [cite_start]**Centro de Gravedad ($x_t, y_t$):** Punto pivote para la rotación del mapa, calculado ponderando los centroides de sub-triángulos[cite: 647].
-    $$
-    x_t = \frac{\sum_{i=1}^{j} C_{ix} A_i}{\sum_{i=1}^{j} A_i}, \quad y_t = \frac{\sum_{i=1}^{j} C_{iy} A_i}{\sum_{i=1}^{j} A_i} \tag{6}
-    $$
+### Cooperative Logistics
+-   **Mobile Station Synchronization**: Plans the trajectory of a ground vehicle (truck) that moves along the field boundary to serve as a mobile landing platform.
+-   **Energy & Flow Management**: Calculates precise rendezvous points based on the drone's battery discharge curve and liquid flow rate, ensuring safe return before resource depletion.
+-   **Efficiency Analysis**: Provides comparative metrics between Static Station operations vs. Mobile Station operations, quantifying gains in field efficiency and reduction in deadhead distance.
 
-* [cite_start]**Rotación de Coordenadas:** Transformación de vértices según el ángulo $\psi$[cite: 650].
-    $$
-    \begin{cases} 
-    x' = (x_{D'_i} - x_t)\sin\psi + (y_{D'_i} - y_t)\cos\psi + x_t \\ 
-    y' = (x_{D'_i} - x_t)\sin\psi + (y_{D'_i} - y_t)\cos\psi + y_t 
-    \end{cases} \tag{7}
-    $$
+### Visualization & Simulation
+-   **Interactive Interface**: A PyQt6-based graphical interface for real-time visualization of field boundaries, flight paths, spray coverage, and truck routes.
+-   **Mission Profiling**: Detailed inspection of mission cycles, including specific coordinates for start/end points and resource consumption per cycle.
 
-### 2.3. Fase 3: Detección de Concavidad (Mapeo Topológico)
-Para identificar vértices que obstruyen la ruta ("Tipo 2") y requieren descomposición del área.
+## Technology Stack
 
-* [cite_start]**Líneas Proyectivas:** Se definen dos líneas auxiliares $L_1, L_2$ alrededor del vértice $D_i$[cite: 713].
-    $$
-    \begin{cases} \gamma_{L1} = y_i + k \\ \gamma_{L2} = y_i - k \end{cases} \tag{8}
-    $$
+-   **Language**: Python 3.10+
+-   **GUI Framework**: PyQt6
+-   **Computational Geometry**: Shapely, NumPy
+-   **Architecture**: Model-View-Controller (MVC)
 
-* [cite_start]**Puntos de Proyección ($XX$):** Proyección de los vértices adyacentes sobre las líneas auxiliares[cite: 718].
-    $$
-    XX_{i \pm 1} = \frac{(x_{i \pm 1} - x_i)(y - y_i)}{(y_{i \pm 1} - y_i)} + x_i \tag{9}
-    $$
+## Project Architecture
 
-* [cite_start]**Criterio de Decisión ($\delta$):** Diferencia posicional para clasificar la concavidad[cite: 721].
-    $$
-    \delta = XX_{i-1} - XX_{i+1} \tag{10}
-    $$
+The system is architected using the **Model-View-Controller (MVC)** design pattern to ensure separation of concerns, modularity, and scalability. The core algorithmic logic is decoupled from the user interface.
 
-### 2.4. Fase 4: Optimización por Algoritmo Genético (GA)
-El ángulo óptimo $\psi_{opt}$ se encuentra maximizando una función de aptitud basada en eficiencia.
+### Directory Structure & Design Patterns
 
-* [cite_start]**Distancia de Vuelo Total ($l$):** Suma de trayectos entre waypoints $p$[cite: 788].
-    $$
-    l = \sum_{i=1}^{n} (|\vec{p_{2i} p_{2i-1}}|) \tag{11}
-    $$
+```
+agriswarm_planner/
+├── src/
+│   ├── algorithms/          # MODEL (Core Logic)
+│   │   ├── decomposition.py #   - Concave Polygon Decomposition (Phase 2)
+│   │   ├── genetic_optimizer.py # - Genetic Algorithm Engine (Phase 4)
+│   │   ├── segmentation.py  #   - Logistics Segmentation (Phase 5)
+│   │   ├── strategy.py      #   - Strategy Pattern Interface
+│   │   └── ...
+│   │
+│   ├── controllers/         # CONTROLLER
+│   │   └── mission_controller.py # - Façade orchestrating UI inputs and Algorithms
+│   │
+│   ├── gui/                 # VIEW
+│   │   ├── map_widget.py    #   - Custom QGraphicScene for visualization
+│   │   ├── report_window.py #   - Analytics Dashboard
+│   │   └── ...
+│   │
+│   └── utils/               # SHARED UTILITIES
+└── main.py                  # Entry Point
+```
 
-* [cite_start]**Tasa de Cobertura Extra ($\eta$):** Porcentaje de área fumigada fuera del polígono útil[cite: 790].
-    $$
-    \eta = \frac{|\sum_{i=1}^{n}(|\vec{p_{2i} p_{2i-1}}| d) - S|}{S} \times 100\% \tag{12}
-    $$
-    [cite_start]Donde $S'$ (Área cubierta estimada) es[cite: 793]:
-    $$
-    S' = \sum_{i=1}^{n} (|\vec{p_{2i} p_{2i-1}}| d) \tag{13}
-    $$
+**Key Design Patterns Applied:**
 
-* **Función de Fitness ($f_{fitness}$):** Combina la distancia normalizada $I_{norm}$ y el error de cobertura. [cite_start]Se busca maximizar este valor[cite: 800, 801].
-    $$
-    I_{norm} = l_i / \sqrt{\sum_{i=1}^{\alpha} l_i^2} \tag{14}
-    $$
-    $$
-    f_{fitness} = \left( I_{norm} + \left| \frac{S' - S}{S} \right| \right)^{-1} \tag{15}
-    $$
+*   **Strategy Pattern (`src/algorithms/strategy.py`)**: Defines a common interface (`MissionPlannerStrategy`) for path planning algorithms. This allows the system to switch dynamically between different optimization strategies (e.g., Genetic Algorithm, Grid Search) without modifying the controller logic.
+*   **Façade Pattern (`src/controllers/mission_controller.py`)**: Provides a simplified interface to the complex subsystem of algorithms (Decomposition -> GA -> Segmentation), making the system easier to use for the GUI layer.
 
-* [cite_start]**Selección (Ruleta):** Probabilidad de que un individuo (ángulo) pase a la siguiente generación[cite: 811].
-    $$
-    P_{select}(a_i) = \frac{f_{fitness}(a_i)}{\sum_{j=1}^{n} f(a_j)} \tag{16}
-    $$
-    $$
-    Q_{select}(a_i) = \sum_{j=1}^{i} P(a_j) \tag{17}
-    $$
+## Installation
 
----
+### Prerequisites
+-   Python 3.8 or higher
 
-## 3. Arquitectura del Software
-(Mantén aquí tu estructura de carpetas src/ data/ examples/)
+### Setup
 
-## 4. Referencias
-1. **Li, J., Sheng, H., Zhang, J., & Zhang, H. (2023).** *"Coverage Path Planning Method for Agricultural Spraying UAV in Arbitrary Polygon Area"*. Aerospace, 10(9), 755. MDPI. [https://doi.org/10.3390/aerospace10090755]
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/yourusername/agriswarm_planner.git
+    cd agriswarm_planner
+    ```
+
+2.  Create a virtual environment:
+    ```bash
+    python -m venv venv
+    # Linux/Mac
+    source venv/bin/activate
+    # Windows
+    venv\Scripts\activate
+    ```
+
+3.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+## Usage Procedures
+
+1.  **Launch the System**:
+    Execute the entry point script:
+    ```bash
+    python main.py
+    ```
+
+2.  **Field Definition**:
+    Define the field boundary interacting with the map. The system supports complex concave polygons.
+
+3.  **Parameter Configuration**:
+    Select the UAV model and configure critical operation parameters:
+    -   Swath Width (m)
+    -   Safety Buffer (m)
+    -   Tank Capacity (L)
+    -   Battery Endurance (min)
+
+4.  **Algorithm Execution**:
+    Initiate the calculation. The system will sequentially execute:
+    -   Geometry validation and buffering.
+    -   Convex decomposition.
+    -   Genetic optimization for path angle.
+    -   Logistics segmentation.
+
+5.  **Results Analysis**:
+    Review the generated path and access the "Comparative Report" to evaluate the operational efficiency metrics.
+
+## License
+
+This project is open-source and available under the MIT License.

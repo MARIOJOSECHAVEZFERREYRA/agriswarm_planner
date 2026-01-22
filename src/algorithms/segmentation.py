@@ -4,11 +4,13 @@ from .mobile_station import MobileStation
 
 class MissionSegmenter:
     """
-    Corta una ruta continua en segmentos operables basandose en la fisica
-    del dron (Bateria, Liquido) y la logistica del camion.
+    Cuts a continuous route into operable segments based on drone physics
+    (Battery, Liquid) and truck logistics.
+    
+    
     """
     
-    def __init__(self, drone_specs, mobile_station, target_rate_l_ha=20.0, work_speed_kmh=20.0):
+    def __init__(self, drone_specs, mobile_station, target_rate_l_ha=20.0, work_speed_kmh=20.0, swath_width=None):
         self.specs = drone_specs
         self.station = mobile_station
         self.rate_l_ha = target_rate_l_ha
@@ -18,14 +20,20 @@ class MissionSegmenter:
              self.speed_kmh = work_speed_kmh
         
         self.speed_ms = self.speed_kmh / 3.6
-        self.swath_width = 5.0 # Default fallback
-        if self.specs.spray and self.specs.spray.swath_m:
-             self.swath_width = (float(self.specs.spray.swath_m[0].value) + float(self.specs.spray.swath_m[1].value)) / 2
+        
+        # Swath Width: Use parameter if provided, otherwise fallback to drone specs
+        if swath_width is not None:
+            self.swath_width = swath_width
+        elif self.specs.spray and self.specs.spray.swath_m:
+            self.swath_width = (float(self.specs.spray.swath_m[0].value) + float(self.specs.spray.swath_m[1].value)) / 2
+        else:
+            self.swath_width = 5.0  # Default fallback
              
         # Physics Constants
         self.liters_per_meter = (self.rate_l_ha * self.swath_width) / 10000.0
         
         # Tank Capacity
+        # 
         self.tank_capacity = 0.0
         if self.specs.spray and self.specs.spray.tank_l:
             self.tank_capacity = float(self.specs.spray.tank_l.value)
@@ -49,7 +57,7 @@ class MissionSegmenter:
 
     def segment_path(self, polygon, raw_path, truck_polygon=None, start_point=None, truck_route_line=None):
         """
-        Segmenta la ruta con logica Smart Nozzle.
+        Segments the path with Smart Nozzle logic.
         """
         cycles = []
         current_cycle_points = []
@@ -57,7 +65,7 @@ class MissionSegmenter:
         
         ref_polygon_truck = truck_polygon if truck_polygon else polygon
         
-        # Estado actual
+        # Current state
         current_liquid = self.tank_capacity
         current_time_air = 0.0
         
@@ -83,6 +91,7 @@ class MissionSegmenter:
             p2 = raw_path[i+1]
             
             # 1. Analyze Segment (Spray vs Deadhead)
+            # 
             is_spray = self._is_spraying(p1, p2, polygon)
             
             dist_step = np.linalg.norm(np.array(p1[:2]) - np.array(p2[:2]))
@@ -161,12 +170,12 @@ class MissionSegmenter:
                 current_cycle_segments = []
                 current_cycle_points = []
                 
-                # Costo de entrada al nuevo ciclo: Truck -> P1 (donde nos quedamos)
+                # Cost of entering the new cycle: Truck -> P1 (where we left off)
                 dist_commute_in = np.linalg.norm(np.array(truck_pos) - np.array(p1[:2]))
                 time_commute_in = dist_commute_in / self.speed_ms
                 current_time_air += time_commute_in
                 
-                # NO incrementamos i, reintentamos P1->P2 en el nuevo ciclo
+                # Do not increment i, retry P1->P2 in the new cycle
                 
         # Final Cycle
         if current_cycle_segments:
@@ -210,6 +219,7 @@ class MissionSegmenter:
     def _compress_segments(self, segments):
         """
         Compresses adjacent segments of same type into continuous visual groups.
+        
         """
         if not segments: return []
         

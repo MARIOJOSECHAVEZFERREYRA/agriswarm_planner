@@ -12,17 +12,19 @@ from .decomposition import ConcaveDecomposer
 
 class GeneticOptimizer:
     """
-    Implementación OPTIMIZADA de la Fase 4: Optimización por Algoritmo Genético (GA).
+    OPTIMIZED Implementation of Phase 4: Genetic Algorithm (GA) Optimization.
     
-    OPTIMIZACIONES APLICADAS:
-    - Cacheo de descomposiciones (820x speedup)
-    - Cacheo de paths con LRU (820x speedup)
+    
+    
+    APPLIED OPTIMIZATIONS:
+    - Decomposition caching (820x speedup)
+    - Path caching with LRU (820x speedup)
     - Early stopping (2x speedup)
-    - Población adaptativa (1.8x speedup)
-    - Vectorización NumPy (10-50x en normalizaciones)
-    - Paralelización multi-core (6x speedup)
+    - Adaptive population (1.8x speedup)
+    - NumPy Vectorization (10-50x in normalizations)
+    - Multi-core parallelization (6x speedup)
     
-    Mejora estimada total: ~950-17,700x
+    Estimated total improvement: ~950-17,700x
     """
 
     def __init__(self, planner: BoustrophedonPlanner, 
@@ -34,13 +36,13 @@ class GeneticOptimizer:
                  enable_early_stopping=True,
                  early_stopping_patience=50):
         """
-        Inicialización con parámetros de optimización.
+        Initialization with optimization parameters.
         
-        :param angle_discretization: Grados entre ángulos discretizados (5° por defecto)
-        :param enable_caching: Activar cacheo de descomposiciones/paths
-        :param enable_parallelization: Usar procesamiento paralelo
-        :param enable_early_stopping: Detener si no hay mejora
-        :param early_stopping_patience: Generaciones sin mejora antes de detener
+        :param angle_discretization: Degrees between discretized angles (default 5°)
+        :param enable_caching: Enable caching of decompositions/paths
+        :param enable_parallelization: Use parallel processing
+        :param enable_early_stopping: Stop if no improvement
+        :param early_stopping_patience: Generations without improvement before stopping
         """
         self.planner = planner
         self.initial_pop_size = pop_size
@@ -48,45 +50,49 @@ class GeneticOptimizer:
         self.crossover_rate = crossover_rate
         self.mutation_rate = mutation_rate
         
-        # Optimizaciones
+        # Optimizations
         self.angle_discretization = angle_discretization
         self.enable_caching = enable_caching
         self.enable_parallelization = enable_parallelization
         self.enable_early_stopping = enable_early_stopping
         self.early_stopping_patience = early_stopping_patience
         
-        # Grid de ángulos discretizados
+        # Discretized angle grid
         self.angle_grid = np.arange(0, 360, angle_discretization)
         
-        # Cachés (se inicializan por polígono)
+        # Caches (initialized per polygon)
         self.decomposition_cache = {}
         self.path_cache = {}
         
-        # Precisión del paper
+        # Paper precision
         self.precision_decimals = 3
         
-        # Número de cores para paralelización
+        # Number of cores for parallelization
+        # 
         self.num_workers = max(1, cpu_count() - 1) if enable_parallelization else 1
 
     def _discretize_angle(self, angle: float) -> float:
-        """Redondea ángulo al grid discretizado más cercano."""
+        """Rounds angle to the nearest discretized grid value."""
         if not self.enable_caching:
             return angle
         idx = np.argmin(np.abs(self.angle_grid - (angle % 360)))
         return self.angle_grid[idx]
 
     def _get_adaptive_population_size(self, gen: int) -> int:
-        """Reduce población conforme avanza el algoritmo."""
+        """
+        Reduces population as the algorithm progresses.
+        
+        """
         max_gen = self.generations
-        if gen < max_gen * 0.3:  # Primeras 30%: Exploración
+        if gen < max_gen * 0.3:  # First 30%: Exploration
             return self.initial_pop_size
-        elif gen < max_gen * 0.7:  # 30-70%: Convergencia
+        elif gen < max_gen * 0.7:  # 30-70%: Convergence
             return max(50, self.initial_pop_size // 2)
-        else:  # Últimas 30%: Refinamiento
+        else:  # Last 30%: Refinement
             return max(25, self.initial_pop_size // 4)
 
     def _build_caches(self, polygon: Polygon):
-        """Pre-calcula descomposiciones para todos los ángulos del grid."""
+        """Pre-calculates decompositions for all grid angles."""
         if not self.enable_caching:
             return
             
@@ -96,12 +102,12 @@ class GeneticOptimizer:
         self.path_cache = {}
         
         for i, angle in enumerate(self.angle_grid):
-            # Descomposición
+            # Decomposition
             sub_polygons = ConcaveDecomposer.decompose(polygon, angle)
-            poly_key = polygon.wkt  # Serializar polígono
+            poly_key = polygon.wkt  # Serialize polygon
             self.decomposition_cache[(poly_key, angle)] = sub_polygons
             
-            # Paths para cada sub-polígono
+            # Paths for each sub-polygon
             for sub_poly in sub_polygons:
                 sub_key = sub_poly.wkt
                 cache_key = (sub_key, angle, self.planner.spray_width)
@@ -115,7 +121,7 @@ class GeneticOptimizer:
         print(f"✓ Caches built: {len(self.decomposition_cache)} decompositions, {len(self.path_cache)} paths")
 
     def _get_decomposition(self, polygon: Polygon, angle: float):
-        """Obtiene descomposición desde caché o calcula on-the-fly."""
+        """Gets decomposition from cache or calculates on-the-fly."""
         angle = self._discretize_angle(angle)
         
         if self.enable_caching:
@@ -123,11 +129,11 @@ class GeneticOptimizer:
             if key in self.decomposition_cache:
                 return self.decomposition_cache[key]
         
-        # Fallback: calcular si no está en caché
+        # Fallback: calculate if not in cache
         return ConcaveDecomposer.decompose(polygon, angle)
 
     def _get_path(self, sub_poly: Polygon, angle: float):
-        """Obtiene path desde caché o calcula on-the-fly."""
+        """Gets path from cache or calculates on-the-fly."""
         angle = self._discretize_angle(angle)
         
         if self.enable_caching:
@@ -141,13 +147,13 @@ class GeneticOptimizer:
     def _evaluate_individual(self, angle: float, polygon: Polygon, 
                             truck_route: Optional[LineString], target_area_S: float):
         """
-        Evalúa un individuo (ángulo) y retorna sus métricas.
-        Función pura para permitir paralelización.
+        Evaluates an individual (angle) and returns its metrics.
+        Pure function to allow parallelization.
         """
-        # 1. Descomposición (con caché)
+        # 1. Decomposition (cached)
         sub_polygons = self._get_decomposition(polygon, angle)
         
-        # 2. Generación de Rutas (con caché)
+        # 2. Path Generation (cached)
         total_path = []
         sub_paths = []
         total_l = 0.0
@@ -160,10 +166,10 @@ class GeneticOptimizer:
             total_l += l
             total_s_prime += s_prime
         
-        # 3. Costos Cooperativos
+        # 3. Cooperative Costs
         truck_perimeter_cost = RouteCostEvaluator.calculate_total_truck_cost(polygon, sub_paths)
         
-        # 4. Costos Logísticos (Anchor Route)
+        # 4. Logistics Costs (Anchor Route)
         log_cost = 0.0
         if truck_route and len(total_path) > 1:
             p_start = Point(total_path[0])
@@ -172,7 +178,7 @@ class GeneticOptimizer:
             d2 = truck_route.distance(p_end)
             log_cost = d1 + d2
         
-        # 5. Error de Cobertura
+        # 5. Coverage Error
         coverage_error = abs(total_s_prime - target_area_S) / target_area_S if target_area_S > 0 else 0
         
         return {
@@ -187,13 +193,13 @@ class GeneticOptimizer:
 
     def optimize(self, polygon: Polygon, truck_route: Optional[LineString] = None) -> Tuple[float, List[tuple], dict]:
         """
-        Ejecuta el ciclo evolutivo OPTIMIZADO.
+        Executes the OPTIMIZED evolutionary cycle.
         """
-        # Pre-construir cachés
+        # Pre-build caches
         if self.enable_caching:
             self._build_caches(polygon)
         
-        # Inicialización de Población
+        # Population Initialization
         population = [random.uniform(0, 360) for _ in range(self.initial_pop_size)]
         
         best_solution = None
@@ -210,33 +216,33 @@ class GeneticOptimizer:
         print(f"  - Adaptive Population: ✓\n")
 
         for gen in range(self.generations):
-            # Población adaptativa
+            # Adaptive Population
             current_pop_size = self._get_adaptive_population_size(gen)
             population = population[:current_pop_size]
             
-            # --- EVALUACIÓN PARALELA ---
+            # --- PARALLEL EVALUATION ---
             if self.enable_parallelization and self.num_workers > 1:
-                # Paralelización desactivada por problemas de pickling con cachés
-                # Usar evaluación secuencial pero optimizada con cachés
+                # Parallelization disabled due to pickling issues with caches
+                # Use sequential evaluation optimized with caches
                 raw_metrics = [self._evaluate_individual(angle, polygon, truck_route, target_area_S) 
                               for angle in population]
             else:
-                # Evaluación secuencial
+                # Sequential evaluation
                 raw_metrics = [self._evaluate_individual(angle, polygon, truck_route, target_area_S) 
                               for angle in population]
             
-            # --- CÁLCULO DE FITNESS VECTORIZADO ---
-            # Extraer arrays para vectorización
+            # --- VECTORIZED FITNESS CALCULATION ---
+            # Extract arrays for vectorization
             distances_l = np.array([m['l'] for m in raw_metrics])
             logistics_costs = np.array([m['log_cost'] for m in raw_metrics])
             coop_costs = np.array([m['truck_cost'] for m in raw_metrics])
             
-            # Normalización vectorizada (NumPy)
+            # Vectorized Normalization (NumPy)
             sqrt_sum_sq_l = np.sqrt(np.sum(distances_l ** 2)) if np.any(distances_l) else 1.0
             sqrt_sum_log = np.sqrt(np.sum(logistics_costs ** 2)) if np.any(logistics_costs) else 1.0
             sqrt_sum_coop = np.sqrt(np.sum(coop_costs ** 2)) if np.any(coop_costs) else 1.0
             
-            # Fitness vectorizado
+            # Vectorized Fitness
             fitness_values = []
             metrics_list = []
             
@@ -245,7 +251,7 @@ class GeneticOptimizer:
                 log_norm = (m['log_cost'] / sqrt_sum_log) if truck_route else 0.0
                 coop_norm = m['truck_cost'] / sqrt_sum_coop
                 
-                # Pesos
+                # Weights
                 w_log = 5.0 if truck_route else 0.0
                 w_coop = 2.0
                 
@@ -266,7 +272,7 @@ class GeneticOptimizer:
                 }
                 metrics_list.append(metrics)
                 
-                # Actualizar mejor global
+                # Update global best
                 if fitness > best_fitness:
                     best_fitness = fitness
                     best_solution = metrics
@@ -275,21 +281,22 @@ class GeneticOptimizer:
             if self.enable_early_stopping and gen > 0:
                 improvement = abs(best_fitness - prev_best_fitness) / max(abs(prev_best_fitness), 1e-10)
                 
-                if improvement < 1e-5:  # Tolerancia
+                if improvement < 1e-5:  # Tolerance
                     no_improvement_count += 1
                 else:
                     no_improvement_count = 0
                 
                 if no_improvement_count >= self.early_stopping_patience:
                     print(f"\n✓ Early stopping at generation {gen+1} (no improvement in {self.early_stopping_patience} gens)")
+                    # 
                     break
             
             prev_best_fitness = best_fitness
 
-            # --- SELECCIÓN, CRUCE Y MUTACIÓN ---
+            # --- SELECTION, CROSSOVER, AND MUTATION ---
             new_population = []
             
-            # Elitismo
+            # Elitism
             new_population.append(best_solution["angle"])
             
             while len(new_population) < current_pop_size:
@@ -310,7 +317,7 @@ class GeneticOptimizer:
             
             population = new_population
 
-            # Log cada 25 generaciones (más frecuente para ver progreso)
+            # Log every 25 generations (more frequent to see progress)
             if (gen + 1) % 25 == 0:
                 print(f"   Gen {gen+1}/{self.generations} | Pop: {current_pop_size} | "
                       f"Fitness: {best_fitness:.6f} | Angle: {best_solution['angle']:.1f}°")
@@ -322,7 +329,7 @@ class GeneticOptimizer:
         return best_solution["angle"], best_solution["path"], best_solution
 
     def _roulette_selection(self, population, fitness_values):
-        """Selección de Ruleta (sin cambios)."""
+        """Roulette Wheel Selection (unchanged)."""
         total_fitness = sum(fitness_values)
         if total_fitness == 0:
             return random.choice(population)
@@ -336,14 +343,20 @@ class GeneticOptimizer:
         return population[-1]
 
     def _crossover(self, p1, p2):
-        """Operador de Cruce (sin cambios)."""
+        """
+        Crossover Operator (unchanged).
+        
+        """
         alpha = random.random()
         c1 = alpha * p1 + (1 - alpha) * p2
         c2 = (1 - alpha) * p1 + alpha * p2
         return c1 % 360, c2 % 360
 
     def _mutate(self, angle):
-        """Operador de Mutación (sin cambios)."""
+        """
+        Mutation Operator (unchanged).
+        
+        """
         if random.random() < self.mutation_rate:
             mutation_amount = random.gauss(0, 10)
             return (angle + mutation_amount) % 360

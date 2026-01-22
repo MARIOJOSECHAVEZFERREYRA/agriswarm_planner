@@ -11,6 +11,8 @@ class MissionAnalyzer:
         """
         Simulates the same mission but with the fixed station at the starting point.
         Returns: (cycles, total_dist_air, total_time)
+        
+        
         """
         # 1. Define "Truck Path" as a static point (minimum buffer at the start)
         p_start = raw_path[0]
@@ -72,7 +74,7 @@ class MissionAnalyzer:
         area_m2 = polygon.area
         area_ha = area_m2 / 10000.0
         
-        # 3.Times
+        # 3. Times
         # Use working speed for everything as a conservative approximation,
         # or separate if we have velocity profiles in the future.
         work_speed_ms = float(drone_specs.flight.work_speed_kmh.value) / 3.6
@@ -90,14 +92,15 @@ class MissionAnalyzer:
             prod_ha_hr = area_ha / (total_op_time_min / 60.0)
             
         # 5. Dosage
-        # Total Litros = Spray Dist (m) * Swath (m) * (L/m2 ?) No...
-        # Better: Dosis = (FlowRate * SprayTime) / Area ?
+        # Total Liters = Spray Dist (m) * Swath (m) * (L/m2 ?) No...
+        # Better: Dosage = (FlowRate * SprayTime) / Area ?
         # Or simpler: Use tank * cycles? Not exact.
         # Use the rate configured in the segmenter if possible or infer it.
-        # Dosis = (Volumen Total Aplicado) / (Area Cultivo)
+        # Dosage = (Total Volume Applied) / (Crop Area)
         
-        # Volumen Aplicado:
+        # Applied Volume:
         # Sum of (Spray Dist / Speed) * FlowRate
+        # 
         flow_l_min = float(drone_specs.spray.max_flow_l_min.value) # Assume max flow? Or regulated?
         # In theory the segmenter adjusts speed/flow to meet target.
         # Assume we apply what the area requires.
@@ -123,7 +126,7 @@ class MissionAnalyzer:
     @staticmethod
     def compare_missions(mobile_cycles, static_cycles):
         """
-        Genera metricas comparativas.
+        Generates comparative metrics.
         """
         def get_metrics(cycles):
             total_dist = 0
@@ -158,11 +161,11 @@ class MissionAnalyzer:
         m_total, m_dead, m_spray, m_truck = get_metrics(mobile_cycles)
         s_total, s_dead, s_spray, s_truck = get_metrics(static_cycles) # s_truck is usually 0
         
-        # Ahorro
+        # Savings
         dead_savings_km = (s_dead - m_dead) / 1000.0
         eff_improvement = 0.0
         if s_total > 0:
-             # Eficiencia = Spray / Total
+             # Efficiency = Spray / Total
              eff_mobile = m_spray / m_total if m_total else 0
              eff_static = s_spray / s_total if s_total else 0
              eff_improvement = (eff_mobile - eff_static) * 100.0
@@ -172,7 +175,7 @@ class MissionAnalyzer:
             "static_dead_km": s_dead / 1000.0,
             "mobile_truck_km": m_truck / 1000.0,
             "static_truck_km": s_truck / 1000.0,
-            "savings_km": dead_savings_km, # Dron savings
+            "savings_km": dead_savings_km, # Drone savings
             "efficiency_gain_pct": eff_improvement,
             "efficiency_static_pct": (s_spray / s_total * 100) if s_total else 0,
             "efficiency_mobile_pct": (m_spray / m_total * 100) if m_total else 0
@@ -181,40 +184,41 @@ class MissionAnalyzer:
     @staticmethod
     def plan_logistics(mobile_cycles, drone_specs):
         """
-        Genera el plan de recursos.
+        Generates the resource plan.
         """
         tank_l = float(drone_specs.spray.tank_l.value)
         
-        # Estimacion de baterias
-        # Tiempo de vuelo total vs Tiempo de carga
-        # Esto es complejo, hagamos una heuristica simple propuesta por el usuario:
-        # "Rotacion de carga". Necesitamos saber cuanto dura un vuelo y cuanto tarda en cargar.
+        # Battery estimation
+        # Total flight time vs Charge time
+        # 
+        # This is complex, let's use a simple heuristic proposed by the user:
+        # "Charge Rotation". We need to know how long a flight lasts and how long it takes to charge.
         flight_time_min = 15.0 # Default
         charge_time_min = 30.0 # Default
         
         if drone_specs.flight.flight_time_min:
-             flight_time_min = float(drone_specs.flight.flight_time_min['hover_loaded'].value) # Conservador
+             flight_time_min = float(drone_specs.flight.flight_time_min['hover_loaded'].value) # Conservative
         
         if drone_specs.battery and drone_specs.battery.charge_time_min:
              charge_time_min = float(drone_specs.battery.charge_time_min.value)
              
-        # Ratio: Si vuelo 10 min y carga 30 min, necesito 3 baterias cargando mientras vuelo 1.
-        # Total packs = 1 (volando) + ceil(Charge / Flight)
+        # Ratio: If I fly 10 min and charge 30 min, I need 3 batteries charging while I fly 1.
+        # Total packs = 1 (flying) + ceil(Charge / Flight)
         packs_needed = 1 + int(np.ceil(charge_time_min / flight_time_min))
         
-        # Tabla de paradas
+        # Stops table
         stops = []
         total_liter_mix = 0.0
         
-        # Velocidad de trabajo para calculos
+        # Work speed for calculations
         work_speed_ms = float(drone_specs.flight.work_speed_kmh.value) / 3.6
         flow_l_min = float(drone_specs.spray.max_flow_l_min.value)
         
         for i, cycle in enumerate(mobile_cycles):
-            stop_type = "Inicio" if i == 0 else f"Parada {i}"
+            stop_type = "Start" if i == 0 else f"Stop {i}"
             
-            # --- CALCULO PRECISO DE CONSUMO ---
-            # Sumar distancia de segmentos con spraying=True
+            # --- PRECISE CONSUMPTION CALCULATION ---
+            # Sum segment distance with spraying=True
             segments = cycle.get('segments', [])
             spray_dist_m = 0
             if segments:
@@ -223,33 +227,33 @@ class MissionAnalyzer:
                         d = np.linalg.norm(np.array(s['p1'][:2]) - np.array(s['p2'][:2]))
                         spray_dist_m += d
             else:
-                # Fallback: asumir todo el camino es spray (peor caso)
+                # Fallback: assume the whole path is spray (worst case)
                 path = cycle['path']
                 for j in range(len(path)-1):
                     spray_dist_m += np.linalg.norm(np.array(path[j][:2]) - np.array(path[j+1][:2]))
 
-            # Tiempo rociando (min)
+            # Time spraying (min)
             spray_time_min = (spray_dist_m / work_speed_ms) / 60.0
             
-            # Litros consumidos
-            # Asumiendo flujo constante:
+            # Liters consumed
+            # Assuming constant flow:
             liters_consumed = spray_time_min * flow_l_min
             
-            # Clamp al tamaño del tanque (por si acaso)
+            # Clamp to tank size (just in case)
             if liters_consumed > tank_l: liters_consumed = tank_l
             
             total_liter_mix += liters_consumed
             
-            # Generar descripcion accionable
-            # "Cambio Batería + Recarga 15.4L"
-            action_desc = f"Cambio Bat. + Cargar {liters_consumed:.1f}L"
+            # Generate actionable description
+            # "Bat. Swap + Refill 15.4L"
+            action_desc = f"Bat. Swap + Refill {liters_consumed:.1f}L"
             if i == 0:
-                action_desc = f"Llenar Tanque ({liters_consumed:.1f}L)"
+                action_desc = f"Fill Tank ({liters_consumed:.1f}L)"
             
             stops.append({
                 "name": stop_type,
                 "action": action_desc,
-                "notes": f"Cobertura: {spray_dist_m:.0f}m" 
+                "notes": f"Coverage: {spray_dist_m:.0f}m" 
             })
             
         return {

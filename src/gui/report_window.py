@@ -18,22 +18,22 @@ class ReportWindow(QDialog):
         layout.setContentsMargins(30,30,30,30)
         
         # --- HEADER ---
-        lbl_title = QLabel("ANÁLISIS DE EFICIENCIA: ESTACIÓN MÓVIL vs ESTÁTICA")
+        lbl_title = QLabel("EFFICIENCY ANALYSIS: MOBILE VS STATIC STATION")
         lbl_title.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {DARK_BLUE}; margin-bottom: 10px;")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl_title)
         
-        # --- TARJETAS DE COMPARACIÓN ---
+        # --- COMPARISON CARDS ---
         self.create_comparison_cards(layout, comparison_data)
         
-        # --- SECCION LOGISTICA ---
+        # --- LOGISTICS SECTION ---
         lbl_log = QLabel("FIELD RESOURCE PLANNING")
         lbl_log.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {DARK_BLUE}; margin-top: 20px;")
         layout.addWidget(lbl_log)
         
         self.create_resource_section(layout, resource_data)
         
-        # --- TABLA DE PARADAS ---
+        # --- STOPS TABLE ---
         self.create_stops_table(layout, resource_data.get('stops', []))
         
         # --- FOOTER / EXPORT ---
@@ -51,17 +51,17 @@ class ReportWindow(QDialog):
         container = QHBoxLayout()
         container.setSpacing(15)
         
-        # Card 1: Ahorro Distancia
+        # Card 1: Distance Savings
         dead_km = data.get('savings_km', 0)
         card1 = self.create_metric_card("DEADHEAD DISTANCE SAVINGS", f"{dead_km:.2f} km", "Less empty runs", positive=True)
         container.addWidget(card1)
         
-        # Card 2: Eficiencia
+        # Card 2: Efficiency
         eff = data.get('efficiency_gain_pct', 0)
         card2 = self.create_metric_card("EFFICIENCY IMPROVEMENT", f"+{eff:.1f}%", "Extra productive time", positive=True)
         container.addWidget(card2)
         
-        # Card 3: Comparativa Deadhead
+        # Card 3: Deadhead Comparison
         static_km = data.get('static_dead_km', 0)
         mobile_km = data.get('mobile_dead_km', 0)
         txt = f"Static: {static_km:.1f} km\nMobile: {mobile_km:.1f} km"
@@ -107,7 +107,7 @@ class ReportWindow(QDialog):
         bl = QHBoxLayout(box)
         bl.setContentsMargins(20, 15, 20, 15)
         
-        # Baterias
+        # Batteries
         packs = data.get('battery_packs', 0)
         l1 = QVBoxLayout()
         l1.addWidget(QLabel("PHYSICAL BATTERIES REQUIRED"))
@@ -116,7 +116,7 @@ class ReportWindow(QDialog):
         l1.addWidget(lb_p)
         l1.addWidget(QLabel("(Continuous Charge Rotation)"))
         
-        # Agua
+        # Water
         mix = data.get('total_mix_l', 0)
         l2 = QVBoxLayout()
         l2.addWidget(QLabel("TOTAL WATER REQUIREMENT"))

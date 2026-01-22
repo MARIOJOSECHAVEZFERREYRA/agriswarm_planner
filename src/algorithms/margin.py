@@ -3,23 +3,26 @@ from shapely.geometry import Polygon
 
 class MarginReducer:
     """
-    Implementación de la Fase 1: Reducción de Márgenes (Boundary Shrinking).
-    Basado en las Ecuaciones 1, 2 y 3 del paper de Li et al. (2023).
+    Implementation of Phase 1: Boundary Shrinking.
+    Based on Equations 1, 2, and 3 of the paper by Li et al. (2023).
+    
+    
     """
 
     @staticmethod
     def shrink(polygon: Polygon, margin_h: float) -> Polygon:
         """
-        Contrae un polígono una distancia 'h' hacia su interior.
+        Contracts a polygon by a distance 'h' towards its interior.
         
-        :param polygon: Polígono shapely original.
-        :param margin_h: Distancia de seguridad en metros (h).
-        :return: Nuevo Polígono reducido.
+        :param polygon: Original shapely Polygon.
+        :param margin_h: Safety distance in meters (h).
+        :return: New reduced Polygon.
         """
-        # 1. Asegurar orientación Anti-Horaria (CCW) para consistencia matemática
-        # En Shapely/GIS, CCW significa que el interior está a la izquierda.
+        # 1. Ensure Counter-Clockwise (CCW) orientation for mathematical consistency
+        # In Shapely/GIS, CCW means the interior is on the left.
+        # 
         if polygon.exterior.is_ccw:
-            coords = np.array(polygon.exterior.coords)[:-1] # Quitamos el último punto repetido
+            coords = np.array(polygon.exterior.coords)[:-1] # Remove the last repeated point
         else:
             coords = np.array(polygon.exterior.coords)[::-1][:-1]
 
@@ -27,21 +30,21 @@ class MarginReducer:
         new_coords = []
 
         for i in range(num_points):
-            # Obtener vértices: Anterior (prev), Actual (curr), Siguiente (next)
+            # Get vertices: Previous (prev), Current (curr), Next (next)
             prev_p = coords[i - 1]
             curr_p = coords[i]
             next_p = coords[(i + 1) % num_points]
 
-            # --- ECUACIÓN 1: Cálculo del Vector Bisectriz ---
-            # Vectores que salen del vértice actual hacia los vecinos
+            # --- EQUATION 1: Bisector Vector Calculation ---
+            # Vectors pointing from current vertex to neighbors
             vec_prev = prev_p - curr_p
             vec_next = next_p - curr_p
 
-            # Normalizar vectores (hacerlos unitarios)
+            # Normalize vectors (make them unit vectors)
             len_prev = np.linalg.norm(vec_prev)
             len_next = np.linalg.norm(vec_next)
             
-            # Evitar división por cero si hay puntos duplicados
+            # Avoid division by zero if there are duplicate points
             if len_prev == 0 or len_next == 0:
                 new_coords.append(curr_p)
                 continue
@@ -49,75 +52,79 @@ class MarginReducer:
             u_prev = vec_prev / len_prev
             u_next = vec_next / len_next
 
-            # Vector Suma (Dirección de la bisectriz)
-            # Nota: Apunta hacia el "interior" del ángulo formado por las líneas
+            # Sum Vector (Bisector Direction)
+            # Note: Points towards the "interior" of the angle formed by the lines
+            # 
             vec_C = u_prev + u_next
             
-            # --- ECUACIÓN 2 y Detección de Concavidad ---
-            # Calculamos el ángulo interior theta usando producto punto
+            # --- EQUATION 2 and Concavity Detection ---
+            # Calculate interior angle theta using dot product
             # Dot product: a . b = |a||b| cos(theta)
             dot_prod = np.dot(u_prev, u_next)
-            # Clampear valor para evitar errores numéricos en arccos (ej: 1.00000001)
+            # Clip value to avoid numerical errors in arccos (e.g., 1.00000001)
             dot_prod = np.clip(dot_prod, -1.0, 1.0)
             theta = np.arccos(dot_prod)
 
-            # Detectar si el ángulo es Cóncavo (Reflex) usando Producto Cruz (2D)
-            # Para 3D, usamos solo componentes X e Y para determinar la concavidad (proyección)
+            # Detect if angle is Concave (Reflex) using Cross Product (2D)
+            # For 3D, we use only X and Y components to determine concavity (projection)
             # Cross product 2D: a_x*b_y - a_y*b_x
             cross_prod_2d = u_next[0] * u_prev[1] - u_next[1] * u_prev[0]
             
-            # Determinar si es convexo o cóncavo
-            # En recorrido CCW, si cross > 0 el giro es a la izquierda (convexo estándar)
-            # Si cross < 0, es un giro a la derecha ("mordida" hacia adentro -> cóncavo)
+            # Determine if convex or concave
+            # In CCW traversal, if cross > 0 the turn is to the left (standard convex)
+            # If cross < 0, it is a turn to the right ("bite" inwards -> concave)
+            # 
             is_convex = cross_prod_2d > 0
 
-            # --- ECUACIÓN 3: Magnitud del Desplazamiento ---
-            # Distancia a mover el vértice: L = h / sin(theta/2)
-            # Nota: theta calculado por arccos es siempre [0, pi], que es el ángulo interno 
-            # (o externo dependiendo de la referencia), pero para la magnitud sirve.
-            # Sin embargo, si los vectores son colineales (theta=180), sin(90)=1 -> L=h (correcto)
-            # Si theta=0 (aguja), sin(0)=0 -> L=infinito (correcto, no se puede reducir una aguja)
+            # --- EQUATION 3: Offset Magnitude ---
+            # Distance to move the vertex: L = h / sin(theta/2)
+            # Note: theta calculated by arccos is always [0, pi], which is the internal angle
+            # (or external depending on reference), but for magnitude it works.
+            # However, if vectors are collinear (theta=180), sin(90)=1 -> L=h (correct)
+            # If theta=0 (needle/sharp corner), sin(0)=0 -> L=infinity (correct, cannot shrink a needle)
+            # 
             
             sin_half_theta = np.sin(theta / 2.0)
             
             if sin_half_theta < 1e-6:
-                # Caso degenerado (línea recta o aguja muy afilada), usamos h directo o saltamos
+                # Degenerate case (straight line or very sharp needle), use h directly or skip
                 offset_magnitude = margin_h
             else:
                 offset_magnitude = margin_h / sin_half_theta
 
-            # --- Dirección Final del Desplazamiento ---
+            # --- Final Displacement Direction ---
             norm_C = np.linalg.norm(vec_C)
             if norm_C < 1e-6:
-                # Caso especial: vectores opuestos (180 grados). La bisectriz es perpendicular.
-                # Rotamos u_next 90 grados a la izquierda (CCW)
+                # Special case: opposite vectors (180 degrees). The bisector is perpendicular.
+                # Rotate u_next 90 degrees to the left (CCW)
                 dir_vector = np.array([-u_next[1], u_next[0]])
             else:
                 dir_vector = vec_C / norm_C
 
-            # APLICAR EL PAPER :
+            # APPLY THE PAPER:
             # "Concave point has the opposite shift direction"
-            # Si es convexo, vec_C apunta hacia adentro del polígono.
-            # Si es cóncavo, vec_C apunta hacia afuera ("boca de pacman"), 
-            # pero queremos reducir el polígono, así que debemos mover el borde "hacia la carne".
-            # En un punto cóncavo, movernos hacia adentro significa ir CONTRA vec_C.
+            # If convex, vec_C points towards the inside of the polygon.
+            # If concave, vec_C points towards the outside ("pacman mouth"), 
+            # but we want to shrink the polygon, so we must move the boundary "into the meat".
+            # At a concave point, moving inwards means going AGAINST vec_C.
+            # 
             
             if is_convex:
                 final_movement = dir_vector * offset_magnitude
             else:
-                # Invertimos dirección para puntos cóncavos
-                # Nota: Dependiendo de la geometría exacta, a veces el vector suma ya apunta
-                # hacia afuera. Verificamos visualmente:
-                # Convexo (V): Suma apunta dentro. Queremos ir dentro. OK.
-                # Cóncavo (L interna): Suma apunta al vacío. Queremos ir a la carne (dentro).
-                # Por tanto, necesitamos invertir.
+                # Invert direction for concave points
+                # Note: Depending on exact geometry, sometimes the sum vector already points
+                # outwards. We verify visually:
+                # Convex (V): Sum points in. We want to go in. OK.
+                # Concave (Internal L): Sum points to void. We want to go to meat (in).
+                # Therefore, we need to invert.
                 final_movement = -dir_vector * offset_magnitude
 
             new_p = curr_p + final_movement
             new_coords.append(new_p)
 
-        # Cerrar el polígono y devolver
+        # Close the polygon and return
         if len(new_coords) < 3:
-            return polygon # Fallo, devuelve original o vacío
+            return polygon # Failure, return original or empty
             
         return Polygon(new_coords)

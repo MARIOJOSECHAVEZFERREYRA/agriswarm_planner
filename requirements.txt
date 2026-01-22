@@ -1,7 +1,3 @@
 numpy
-matplotlib
 shapely
-geopandas
-scipy
-
-
+PyQt6
