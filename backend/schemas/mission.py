@@ -1,8 +1,8 @@
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from backend.models.mission_model import MissionStatus, WaypointType
-
 
 
 class FieldPolygon(BaseModel):
@@ -12,34 +12,46 @@ class FieldPolygon(BaseModel):
         ...,
         min_length=2,
         max_length=2,
-        description="[x, y] static recharge/refill location")
+        description="[x, y] static recharge/refill location",
+    )
     ugv_polyline: list[list[float]] | None = Field(
         default=None,
         description="Ordered [x, y] waypoints defining the UGV route. "
-                    "When provided, enables mobile UGV rendezvous mode.")
-    ugv_speed: float = Field(
-        default=2.0,
-        gt=0.0,
-        description="UGV cruise speed in m/s")
+        "When provided, enables mobile UGV rendezvous mode.",
+    )
+    ugv_speed: float = Field(default=2.0, gt=0.0, description="UGV cruise speed in m/s")
     ugv_t_service: float = Field(
         default=300.0,
         gt=0.0,
-        description="Manual service duration at rendezvous point in seconds")
+        description="Manual service duration at rendezvous point in seconds",
+    )
 
 
 class MissionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     field: FieldPolygon
     spray_width: float = Field(default=5.0, gt=0.0, le=50.0)
-    strategy: str = Field(default="grid", pattern="^(grid|genetic)$")
+    strategy: str = Field(default="grid", pattern="^(grid|genetic|fixed)$")
+    strategy_params: dict | None = Field(
+        default=None,
+        description="Strategy-specific params. For 'fixed' pass {'angle': <0-179>}.",
+    )
     drone_name: str = Field(default="DJI Agras T30")
     app_rate: float | None = Field(
         default=None,
         gt=0.0,
         description="Override application rate in L/ha; None = use drone default",
     )
-    cruise_speed_ms: float | None = Field(default=None, gt=0.0, description="Override cruise speed in m/s; None = use drone default")
-    margin_m: float | None = Field(default=None, ge=0.0, description="Safety margin in meters; None = swath/2")
+    cruise_speed_ms: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="Override cruise speed in m/s; None = use drone default",
+    )
+    margin_m: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Safety margin in meters; None = swath/2",
+    )
 
 
 class WaypointOut(BaseModel):
@@ -49,6 +61,7 @@ class WaypointOut(BaseModel):
     y: float
     waypoint_type: WaypointType
     cycle_index: int = 0
+
     model_config = {"from_attributes": True}
 
 
@@ -67,5 +80,6 @@ class MissionOut(BaseModel):
     metrics_json: str | None
     error_message: str | None
     created_at: datetime
-    waypoints: list[WaypointOut] = []
+    waypoints: list[WaypointOut] = Field(default_factory=list)
+
     model_config = {"from_attributes": True}

@@ -1,5 +1,5 @@
 import math
-from shapely.geometry import Polygon, LineString, MultiLineString, Point
+from shapely.geometry import LineString, MultiLineString, Point
 from shapely import affinity
 from shapely.prepared import prep
 from shapely.validation import make_valid

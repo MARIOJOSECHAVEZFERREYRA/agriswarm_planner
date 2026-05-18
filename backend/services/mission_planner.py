@@ -1,3 +1,5 @@
+import logging
+
 from shapely.geometry import Polygon, LineString, Point
 
 from ..utils.geometry import pts_equal
@@ -10,96 +12,69 @@ from ..algorithms.rendezvous.planner import RendezvousPlanner
 from ..models.drone_model import Drone
 
 
+logger = logging.getLogger(__name__)
+
+
 class MissionPlanner:
-    """
-Base orchestrator for mission planning. Subclasses define rendezvous
-infrastructure and segmentation strategy through hook methods.
-
-Responsibility map:
-    MissionPlanner        — orchestrates the planning pipeline, creates the
-                            shared DroneEnergyModel, and wires dependencies.
-    StaticMissionPlanner  — static mission mode; base_point is the permanent
-                            logistics base.
-    DynamicMissionPlanner — dynamic mission mode; builds RendezvousPlanner,
-                            and treats base_point only as the UAV's initial
-                            takeoff position.
-    DroneEnergyModel         — physics model: energy costs and feasibility
-                            predicates (feasible_after_segment_*).
-    RendezvousPlanner        — rendezvous logic: given UAV/UGV states, selects
-                            the best feasible service point on the UGV route.
-    MissionSegmenter         — splits the route into mission cycles using the
-                            energy model and, in dynamic mode, the
-                            RendezvousPlanner.
-
-Optimizer contract:
-    {
-        "angle": float,
-        "route_segments": [
-            {
-                "segment_type": "sweep" | "ferry",
-                "spraying": bool,
-                "path": [(x, y), ...],
-                "distance_m": float,
-            },
-            ...
-        ],
-        "combined_path": [(x, y), ...],
-        "gen_stats": [...],
-        "planner_metrics": {...},
-        "route_distances": {...},
-    }
-"""
+    """Coordinate geometry cleanup, route optimization, segmentation, and metrics."""
 
     def __init__(self):
         self.last_result = None
 
-    def run_mission_planning(self, db, polygon_points, drone_name, overrides, base_point, strategy_name="grid", precalculated_route_segments=None, obstacle_polygons=None):
-        
-        # 1. Get the drone info and build the single energy model used across the mission.
+    def run_mission_planning(
+        self,
+        db,
+        polygon_points,
+        drone_name,
+        overrides,
+        base_point,
+        strategy_name="grid",
+        precalculated_route_segments=None,
+        obstacle_polygons=None,
+        strategy_params=None,
+    ):
         drone, energy_model = self._load_drone_and_energy_model(db, drone_name)
-        
-        # 2. Geometry validation + sanitization
         polygon, holes = self._build_polygon(polygon_points, obstacle_polygons)
-        
-        # 3. Override mission parameters from frontend panel
-        real_swath, app_rate, speed_kmh, calc_flow_l_min, margin_h = \
-            self._resolve_operational_params(drone, overrides)
+        real_swath, app_rate, speed_kmh, calc_flow_l_min, margin_h = self._resolve_operational_params(
+            drone,
+            overrides,
+        )
 
-        # 4. Safety margin
         safe_polygon = self._build_safe_polygon(polygon, margin_h)
-
-        # 5. Base point validation
         base_point = self._validate_base_point(base_point, safe_polygon)
-
-        # 6. Rendezvous infrastructure
-        #Set up rendezvous components for dynamic missions.
-        #Static mode returns (None, None).
         opt_energy_model, rendezvous_planner = self._init_rendezvous(drone, energy_model)
 
-        # 7. Route optimization / route acquisition
-        #Get the mission route either from precomputed segments or by running the selected optimizer strategy.
-        route_segments, combined_path, best_angle, gen_stats, planner_metrics, \
-            route_distances, opt_result = self._acquire_route(
-                strategy_name, safe_polygon, real_swath, base_point,
-                opt_energy_model, rendezvous_planner, precalculated_route_segments,
-            )
-
+        (
+            route_segments,
+            combined_path,
+            best_angle,
+            gen_stats,
+            planner_metrics,
+            route_distances,
+            opt_result,
+        ) = self._acquire_route(
+            strategy_name,
+            safe_polygon,
+            real_swath,
+            base_point,
+            opt_energy_model,
+            rendezvous_planner,
+            precalculated_route_segments,
+            strategy_params=strategy_params,
+        )
         best_path = self._build_best_path(combined_path)
 
-        # 8. Mission segmentation
-        #Build the segmenter and split the route into mission cycles.
-        #The subclass chooses static or dynamic segmentation.
         segmenter = self._build_segmenter(drone, app_rate, speed_kmh, real_swath, energy_model)
-        # flight_polygon: the raw polygon with all obstacles intact as
-        # holes. safe_polygon has boundary-adjacent obstacles fused into
-        # the exterior (margin reduction side-effect), which hides them
-        # from the geodesic solver. Flight routing must use the raw
-        # obstacles to avoid crossing them.
         self._flight_polygon = polygon
-        mission_cycles = self._segment(segmenter, safe_polygon, route_segments, base_point, rendezvous_planner)
+        mission_cycles = self._segment(
+            segmenter,
+            safe_polygon,
+            route_segments,
+            base_point,
+            rendezvous_planner,
+        )
         rv_infeasibility = getattr(self, "_rv_infeasibility", None)
 
-        # 9. Metrics
         full_metrics, resource_data = self._compute_metrics_and_resources(
             mission_cycles, polygon, drone, calc_flow_l_min, opt_result,
         )
@@ -111,10 +86,6 @@ Optimizer contract:
         )
         self.last_result = result
         return result
-
-    # ------------------------------------------------------------------
-    # Pipeline helpers
-    # ------------------------------------------------------------------
 
     def _load_drone_and_energy_model(self, db, drone_name):
         drone = db.query(Drone).filter(Drone.name == drone_name).first()
@@ -143,8 +114,8 @@ Optimizer contract:
 
             if not polygon.is_valid:
                 polygon = polygon.buffer(0)
-        except Exception as e:
-            print("Warning: error sanitizing polygon: {}".format(e))
+        except Exception as exc:
+            logger.warning("Error sanitizing polygon: %s", exc)
 
         if polygon.is_empty:
             raise ValueError("Invalid or empty polygon after sanitization.")
@@ -210,7 +181,17 @@ Optimizer contract:
 
         return base_point
 
-    def _acquire_route(self, strategy_name, safe_polygon, real_swath, base_point, opt_energy_model, rendezvous_planner, precalculated_route_segments):
+    def _acquire_route(
+        self,
+        strategy_name,
+        safe_polygon,
+        real_swath,
+        base_point,
+        opt_energy_model,
+        rendezvous_planner,
+        precalculated_route_segments,
+        strategy_params=None,
+    ):
         best_angle = 0.0
         gen_stats = []
         planner_metrics = {}
@@ -218,11 +199,10 @@ Optimizer contract:
         opt_result = {}
 
         if precalculated_route_segments is not None:
-
             route_segments = list(precalculated_route_segments)
             combined_path = self._combine_segment_paths(route_segments)
         else:
-            optimizer = StrategyFactory.get_strategy(strategy_name)
+            optimizer = StrategyFactory.get_strategy(strategy_name, **(strategy_params or {}))
             opt_result = optimizer.optimize(
                 safe_polygon,
                 swath_width=real_swath,
@@ -244,8 +224,15 @@ Optimizer contract:
         if not combined_path:
             combined_path = self._combine_segment_paths(route_segments)
 
-        return (route_segments, combined_path, best_angle, gen_stats,
-                planner_metrics, route_distances, opt_result)
+        return (
+            route_segments,
+            combined_path,
+            best_angle,
+            gen_stats,
+            planner_metrics,
+            route_distances,
+            opt_result,
+        )
 
     def _build_best_path(self, combined_path):
         if combined_path and len(combined_path) >= 2:
@@ -277,7 +264,21 @@ Optimizer contract:
         )
         return full_metrics, resource_data
 
-    def _build_result(self, polygon, safe_polygon, mission_cycles, full_metrics, resource_data, best_angle, best_path, route_segments,gen_stats, planner_metrics, route_distances, rv_infeasibility=None):
+    def _build_result(
+        self,
+        polygon,
+        safe_polygon,
+        mission_cycles,
+        full_metrics,
+        resource_data,
+        best_angle,
+        best_path,
+        route_segments,
+        gen_stats,
+        planner_metrics,
+        route_distances,
+        rv_infeasibility=None,
+    ):
         rv_infeasible = bool(rv_infeasibility and rv_infeasibility.get("infeasible"))
         rv_infeasible_reason = rv_infeasibility.get("reason") if rv_infeasibility else None
         return {
@@ -296,10 +297,6 @@ Optimizer contract:
             "rv_infeasible_reason": rv_infeasible_reason,
         }
 
-    # ------------------------------------------------------------------
-    # Subclass hooks for static and dynamic missions
-    # ------------------------------------------------------------------
-
     def _init_rendezvous(self, drone, energy_model):
         """Hook for mode-specific rendezvous setup."""
         return None, None
@@ -310,15 +307,11 @@ Optimizer contract:
 
     def _augment_metrics(self, full_metrics, opt_result, mission_cycles):
         """Hook for mode-specific metric augmentation."""
-        pass
-
-    # ------------------------------------------------------------------
-    # Static utilities
-    # ------------------------------------------------------------------
+        return None
 
     @staticmethod
-    #merges paths
     def _combine_segment_paths(route_segments):
+        """Merge route segment paths into one ordered polyline."""
         if not route_segments:
             return []
 
@@ -340,15 +333,9 @@ Optimizer contract:
 
 
 class StaticMissionPlanner(MissionPlanner):
-    """
-    base_point is the permanent logistics base: the drone departs from it,
-    returns to it between every cycle, and the segmenter uses it as the fixed
-    service reference when evaluating feasibility and closing cycle boundaries.
-    """
+    """Plan missions that always return to the fixed logistics base."""
 
     def _init_rendezvous(self, drone, energy_model):
-        # Pass energy_model to the optimizer so it can estimate per-cycle
-        # deadhead costs during fitness evaluation (static deadhead mode).
         return energy_model, None
 
     def _segment(self, segmenter, safe_polygon, route_segments, base_point, rendezvous_planner):
@@ -356,18 +343,10 @@ class StaticMissionPlanner(MissionPlanner):
 
         assembler = PathAssembler(safe_polygon)
 
-        # Obstacle-aware distance callback — the segmenter uses dist_fn
-        # as a lower bound on return-to-base cost during feasibility
-        # checks. The route itself is preserved verbatim; segment_path
-        # is a pure ordered slicer.
         def _obstacle_dist(a, b):
             _, d = assembler.find_connection(a, b)
             return d
 
-        # Ordered-slicer segmentation: preserves the exact order of
-        # route_segments, groups them into spatial runs, and packs
-        # runs into cycles without crossing spatial boundaries. See
-        # segment_path docstring for details.
         raw_cycles = segmenter.segment_path(
             route_segments, base_point, dist_fn=_obstacle_dist,
         )
@@ -387,29 +366,22 @@ class StaticMissionPlanner(MissionPlanner):
 
             all_segs = open_segs + work_segs + close_segs
             full_path = segmenter.segments_to_path(all_segs)
-            cycles.append({
-                "type": "work",
-                "path": full_path,
-                "segments": all_segs,
-                "visual_groups": segmenter.compress_segments(all_segs),
-                "swath_width": cyc["swath_width"],
-                "base_point": base_point,
-            })
+            cycles.append(
+                {
+                    "type": "work",
+                    "path": full_path,
+                    "segments": all_segs,
+                    "visual_groups": segmenter.compress_segments(all_segs),
+                    "swath_width": cyc["swath_width"],
+                    "base_point": base_point,
+                }
+            )
 
         return cycles
 
 
 class DynamicMissionPlanner(MissionPlanner):
-    """
-    base_point is the UAV's initial takeoff position only. It is NOT a
-    permanent logistics base: once the mission starts, all service stops
-    occur at rendezvous points selected dynamically on the UGV polyline by
-    RendezvousPlanner. The UAV never returns to base_point mid-mission.
-
-    ugv_polyline  : list of (x, y) in flat-plane coordinates (meters).
-    ugv_speed     : UGV speed in m/s.
-    ugv_t_service : manual service duration in seconds.
-    """
+    """Plan missions serviced at moving rendezvous points on the UGV route."""
 
     def __init__(self, ugv_polyline, ugv_speed=2.0, ugv_t_service=300.0):
         super().__init__()
@@ -417,10 +389,13 @@ class DynamicMissionPlanner(MissionPlanner):
         self._ugv_speed = float(ugv_speed)
         self._ugv_t_service = float(ugv_t_service)
 
+    def _validate_base_point(self, base_point, safe_polygon):
+        if not self._ugv_polyline or len(self._ugv_polyline) < 2:
+            raise ValueError("DynamicMissionPlanner requires a non-empty ugv_polyline.")
+        p0 = self._ugv_polyline[0]
+        return (float(p0[0]), float(p0[1]))
+
     def _init_rendezvous(self, drone, energy_model):
-        # Reuse the shared energy_model created by the base controller so the
-        # GA optimizer and the segmenter work with the same physics instance.
-        # Pass v_uav so the planner can derive a speed-balanced default beta.
         rendezvous_planner = RendezvousPlanner(
             ugv_polyline=self._ugv_polyline,
             v_ugv=self._ugv_speed,
@@ -435,10 +410,6 @@ class DynamicMissionPlanner(MissionPlanner):
             segmenter, safe_polygon, route_segments,
             flight_polygon=flight_polygon,
         )
-        # Transient flag consumed by plan_mission immediately after _segment
-        # returns. Do not rely on it outside a single plan_mission invocation.
-        # Kept as side channel so StaticMissionPlanner._segment can continue
-        # returning a plain list (tech debt: unify to a dict return later).
         self._rv_infeasibility = {
             "infeasible": bool(plan.get("infeasible", False)),
             "reason": plan.get("reason"),
@@ -446,9 +417,6 @@ class DynamicMissionPlanner(MissionPlanner):
         return plan.get("cycles", [])
 
     def _augment_metrics(self, full_metrics, opt_result, mission_cycles):
-        # Extraer métricas de rendezvous de la misión realmente segmentada.
-        # Cada ciclo cerrado por plan_dynamic_cycles() tiene 'rv_wait_s';
-        # el último ciclo (misión completa) no tiene esa clave.
-        rv_waits = [c['rv_wait_s'] for c in mission_cycles if 'rv_wait_s' in c]
+        rv_waits = [cycle["rv_wait_s"] for cycle in mission_cycles if "rv_wait_s" in cycle]
         full_metrics["rv_n_rendezvous"] = len(rv_waits)
         full_metrics["rv_wait_min"] = sum(rv_waits) / 60.0 if rv_waits else 0.0

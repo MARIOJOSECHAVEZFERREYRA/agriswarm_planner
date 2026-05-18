@@ -10,8 +10,8 @@ Verifies that:
 
 from types import SimpleNamespace
 
-from backend.algorithms.drone.energy_model import DroneEnergyModel
-from backend.algorithms.rendezvous.segmentation import MissionSegmenter
+from backend.algorithms.energy.energy_model import DroneEnergyModel
+from backend.algorithms.energy.segmentation import MissionSegmenter
 
 
 def _make_drone():

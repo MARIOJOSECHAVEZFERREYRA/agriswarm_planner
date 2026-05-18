@@ -1,18 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.core.settings import get_settings
 from backend.database import Base, engine
-from backend.models import drone_model  # noqa: F401 — registers Drone table with Base
-from backend.routers import fields, mission, simulation, drones
+from backend.models import drone_model, mission_model  # noqa: F401
+from backend.routers import drones, fields, mission, simulation
 
-# Create tables on startup
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="AgriSwarm Planner API", version="0.1.0")
+settings = get_settings()
+
+app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=list(settings.cors_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -21,6 +22,12 @@ app.include_router(fields.router)
 app.include_router(mission.router)
 app.include_router(simulation.router)
 app.include_router(drones.router)
+
+
+@app.on_event("startup")
+def create_tables() -> None:
+    if settings.auto_create_schema:
+        Base.metadata.create_all(bind=engine)
 
 
 @app.get("/health")

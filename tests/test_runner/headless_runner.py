@@ -1,6 +1,6 @@
 """
 Headless Mission Planner — runs the full MVC pipeline without GUI.
-Useful for verifying the controller + optimization + logistics chain.
+Useful for verifying the planning + optimization + logistics chain.
 """
 
 import sys
@@ -10,7 +10,7 @@ import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from controllers.mission_controller import MissionController
+from backend.services.mission_planner import MissionPlanner
 from visual_base import load_json, resolve_json_path
 from drone_picker import pick_drone, get_swath_from_drone
 from utils.ga_stats import plot_3d_convergence, save_gen_stats_json
@@ -47,7 +47,7 @@ def main():
     print(f"Area: {polygon.area:.1f} m²  |  Vertices: {len(polygon.exterior.coords) - 1}")
     print(f"Drone: {drone_name}  |  Swath: {swath:.1f} m  |  Tank: {tank:.1f} L  |  Strategy: {args.strategy}")
 
-    controller = MissionController()
+    controller = MissionPlanner()
     overrides = {
         'swath': swath,
         'tank': tank,

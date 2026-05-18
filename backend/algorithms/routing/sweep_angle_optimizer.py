@@ -5,16 +5,21 @@ same fitness (mission time) and the same return shape so the strategy
 layer can swap implementations without other changes.
 """
 
+import logging
 import math
 import random
+
 import numpy as np
+from shapely import affinity
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
-from shapely import affinity
 
 from ..coverage.decomposition import ConcaveDecomposer
 from ..coverage.path_assembler import PathAssembler
 from ..simulation.mission_simulator import simulate_mission_with_rendezvous
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_obstacle_union(polygon: Polygon):
@@ -51,6 +56,56 @@ class SweepAngleOptimizer:
         # needs a rendezvous_planner.
         self._rv_enabled = energy_model is not None and rendezvous_planner is not None
         self._static_deadhead_enabled = energy_model is not None and rendezvous_planner is None
+
+    # ------------------------------------------------------------------
+    # Polyline alignment penalty (dynamic mode)
+    # ------------------------------------------------------------------
+
+    # Import shared helpers from GridSearchOptimizer so both strategies
+    # rank angles using the same fitness model.
+    _SERVICE_DISCOUNT = 0.3
+
+    @staticmethod
+    def _pt_to_polyline_dist(px, py, polyline):
+        best = float('inf')
+        for i in range(len(polyline) - 1):
+            ax, ay = polyline[i]
+            bx, by = polyline[i + 1]
+            dx, dy = bx - ax, by - ay
+            sl2 = dx * dx + dy * dy
+            if sl2 < 1e-18:
+                continue
+            t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / sl2))
+            d = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+            if d < best:
+                best = d
+        return best
+
+    def _avg_min_endpoint_polyline_dist(self, route_segments):
+        poly = self.rendezvous_planner.ugv_polyline
+        total, n = 0.0, 0
+        for seg in route_segments:
+            if seg.get('segment_type') != 'sweep':
+                continue
+            path = seg.get('path', [])
+            if len(path) < 2:
+                continue
+            d1 = self._pt_to_polyline_dist(
+                float(path[0][0]), float(path[0][1]), poly)
+            d2 = self._pt_to_polyline_dist(
+                float(path[-1][0]), float(path[-1][1]), poly)
+            total += min(d1, d2)
+            n += 1
+        return total / n if n > 0 else 0.0
+
+    def _dynamic_fitness(self, rv_time, rv_count, route_segments):
+        t_service = self.rendezvous_planner.t_service
+        v_uav = float(self.energy_model.drone.speed_max_ms)
+        flight_only = rv_time - rv_count * t_service
+        service_cost = rv_count * t_service * self._SERVICE_DISCOUNT
+        avg_min_dist = self._avg_min_endpoint_polyline_dist(route_segments)
+        alignment = self.w_rv * rv_count * avg_min_dist / v_uav
+        return flight_only + service_cost + alignment
 
     def _estimate_static_deadhead(self, route_segments, base_point):
         """Euclidean walk returning (deadhead_m, n_cycles).
@@ -201,11 +256,18 @@ class SweepAngleOptimizer:
 
         # Fast sequencer in the GA hot path; the winning angle is
         # re-assembled with 'full' geodesic ferries at the end.
+        # In dynamic mode, pass the UGV polyline so cells are ordered
+        # along the UGV's direction of travel.
+        ugv_poly = (
+            self.rendezvous_planner.ugv_polyline
+            if self._rv_enabled else None
+        )
         assembler = PathAssembler(
             sub_polygons,
             original_polygon=polygon,
             sequencer_mode='fast',
             base_point=base_point,
+            ugv_polyline=ugv_poly,
         )
 
         assembly_result = assembler.assemble_connected(all_sweep_segments)
@@ -219,7 +281,8 @@ class SweepAngleOptimizer:
 
         # Deadhead: entry + exit legs, plus mid-mission returns from
         # the static-deadhead walk when enabled.
-        if base_point is not None and route_segments:
+        # In dynamic mode the simulation accounts for all transit.
+        if not self._rv_enabled and base_point is not None and route_segments:
             base_pt = (float(base_point[0]), float(base_point[1]))
             _, d_entry = assembler.find_connection(base_pt, route_segments[0]["path"][0])
             _, d_exit = assembler.find_connection(route_segments[-1]["path"][-1], base_pt)
@@ -237,7 +300,8 @@ class SweepAngleOptimizer:
         )
         total_l = mission_time_s
 
-        # Dynamic missions only: simulate rendezvous to check feasibility.
+        # Dynamic missions: co-simulate UAV-UGV rendezvous and use
+        # the simulation's total_time as the ranking metric.
         rv_feasible = True
         rv_wait = 0.0
         rv_time = 0.0
@@ -254,6 +318,9 @@ class SweepAngleOptimizer:
             rv_wait = sim['total_wait_uav']
             rv_time = sim['total_time']
             rv_count = sim['n_rendezvous']
+            if rv_feasible:
+                total_l = self._dynamic_fitness(
+                    rv_time, rv_count, route_segments)
 
         return {
             "angle": angle_deg,
@@ -389,6 +456,7 @@ class SweepAngleOptimizer:
 
     def optimize(self, polygon: Polygon, base_point=None) -> dict:
         """Run the GA and return the best solution dict."""
+        random.seed(42)
         target_area_S = polygon.area
         eval_cache = {}
 
@@ -482,17 +550,20 @@ class SweepAngleOptimizer:
                 no_improvement_count += 1
 
             if no_improvement_count >= self.early_stopping_patience:
-                print(f"  Early stopping at gen {gen + 1}")
+                logger.info("SweepAngleOptimizer early stop at generation %s", gen + 1)
                 break
 
             if (gen + 1) % 25 == 0 and best_solution is not None:
                 s = gen_stats[-1]
-                print(
-                    f"  Gen {gen + 1}/{self.generations} | "
-                    f"Best: {best_fitness:.4f} @ {best_solution['angle']}° | "
-                    f"Pop mean: fit={s['mean_fitness']:.4f}  "
-                    f"angle={s['mean_angle']:.1f}°  "
-                    f"L={s['mean_l']:.0f}m"
+                logger.info(
+                    "SweepAngleOptimizer gen %s/%s | best %.4f @ %s° | mean fit %.4f angle %.1f° L %.0fm",
+                    gen + 1,
+                    self.generations,
+                    best_fitness,
+                    best_solution["angle"],
+                    s["mean_fitness"],
+                    s["mean_angle"],
+                    s["mean_l"],
                 )
 
         # Re-select the global best from the cache using a FIXED L2
@@ -560,15 +631,16 @@ class SweepAngleOptimizer:
         )
 
         mission_min = best_solution['l'] / 60.0
-        print(
-            f"SweepAngleOptimizer done. Best angle: {best_solution['angle']}°, "
-            f"fitness: {best_abs_fitness:.4f} (fixed-norm), "
-            f"mission={mission_min:.1f}min "
-            f"({best_solution.get('n_cycles', '?')} cycles)  "
-            f"spray={best_solution.get('spray_m', 0):.0f}m  "
-            f"ferry={best_solution.get('ferry_m', 0):.0f}m  "
-            f"deadhead={best_solution.get('deadhead_m', 0):.0f}m  "
-            f"extra coverage: {best_solution['extra_coverage_pct']:.2f}%"
+        logger.info(
+            "SweepAngleOptimizer done | angle=%s° fitness=%.4f mission=%.1fmin cycles=%s spray=%.0fm ferry=%.0fm deadhead=%.0fm coverage+=%.2f%%",
+            best_solution["angle"],
+            best_abs_fitness,
+            mission_min,
+            best_solution.get("n_cycles", "?"),
+            best_solution.get("spray_m", 0),
+            best_solution.get("ferry_m", 0),
+            best_solution.get("deadhead_m", 0),
+            best_solution["extra_coverage_pct"],
         )
 
         best_solution["gen_stats"] = gen_stats
@@ -602,9 +674,13 @@ class SweepAngleOptimizer:
                     s['cell_id'] = cell_id
                 all_sweep_segments.extend(sweep_segments)
 
+        ugv_poly = (
+            self.rendezvous_planner.ugv_polyline
+            if self._rv_enabled else None
+        )
         assembler = PathAssembler(
             sub_polygons, original_polygon=polygon, sequencer_mode='full',
-            base_point=base_point,
+            base_point=base_point, ugv_polyline=ugv_poly,
         )
         assembly = assembler.assemble_connected(all_sweep_segments)
         route_segments = assembly.get("route_segments", [])
@@ -620,7 +696,7 @@ class SweepAngleOptimizer:
         ferry_m = float(assembly.get("distances", {}).get("ferry_m", 0.0))
         deadhead_m = 0.0
         n_cycles = 1
-        if base_point is not None and route_segments:
+        if not self._rv_enabled and base_point is not None and route_segments:
             bp = (float(base_point[0]), float(base_point[1]))
             _, d_entry = assembler.find_connection(bp, route_segments[0]["path"][0])
             _, d_exit = assembler.find_connection(route_segments[-1]["path"][-1], bp)
@@ -641,5 +717,22 @@ class SweepAngleOptimizer:
         best_solution["mission_time_s"] = mission_time_s
         best_solution["flight_time_s"] = flight_time_s
         best_solution["l"] = mission_time_s
+
+        # Dynamic mode: re-run simulation on the full-mode route.
+        if self._rv_enabled and route_segments:
+            sim = simulate_mission_with_rendezvous(
+                route_segments=route_segments,
+                energy_model=self.energy_model,
+                rendezvous_planner=self.rendezvous_planner,
+                assembler=assembler,
+            )
+            best_solution['rv_feasible'] = sim['feasible']
+            best_solution['rv_wait'] = sim['total_wait_uav']
+            best_solution['rv_time'] = sim['total_time']
+            best_solution['rv_count'] = sim['n_rendezvous']
+            if sim['feasible']:
+                best_solution['l'] = self._dynamic_fitness(
+                    sim['total_time'], sim['n_rendezvous'],
+                    route_segments)
 
         return best_solution

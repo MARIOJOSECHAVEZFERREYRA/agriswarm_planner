@@ -1,17 +1,18 @@
 """
-Tests for DynamicMissionController._augment_metrics().
+Tests for DynamicMissionPlanner._augment_metrics().
 
 Verifies that rendezvous metrics are extracted from mission_cycles
 (actual segmented mission) and NOT from opt_result (GA optimizer estimate).
 """
 
 import pytest
-from backend.controllers.mission_controller import DynamicMissionController
+
+from backend.services.mission_planner import DynamicMissionPlanner
 
 
 @pytest.fixture
 def ctrl():
-    return DynamicMissionController(ugv_polyline=[(0.0, 0.0), (100.0, 0.0)])
+    return DynamicMissionPlanner(ugv_polyline=[(0.0, 0.0), (100.0, 0.0)])
 
 
 def test_augment_metrics_counts_only_cycles_with_rv_wait(ctrl):

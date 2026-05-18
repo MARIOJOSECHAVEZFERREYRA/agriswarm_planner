@@ -1,15 +1,5 @@
-"""
-simulation_service.py
+"""Tick-by-tick mission simulation over pre-built UAV and UGV routes."""
 
-Drives mission simulation tick-by-tick. This module:
-
-  1. Operates on pre-built VehicleRoute objects (from route_builder), not a
-     flat waypoint list.
-  2. Uses physics-accurate battery and reagent tracking.
-  3. Emits SimulationFrame with full VehicleSimState per vehicle per tick.
-  4. Supports playback_speed multiplier (time compression).
-  5. Supports both static and dynamic UGV modes via VehicleRoute polymorphism.
-"""
 import asyncio
 import math
 import time
@@ -21,13 +11,7 @@ from backend.services.route_builder_service import VehicleRoute, RouteSegment
 
 
 def _cumulative_energy_frac(seg: RouteSegment, t_norm: float, drone) -> float:
-    """
-    Fraction of seg.energy_cost_wh consumed from segment start to normalized
-    time t_norm ∈ [0, 1], following the three-phase power profile.
-
-    When t_acc_s == t_dec_s == 0 (service/deadhead segments) falls back to
-    linear draining.  Requires drone for power_accel_factor / power_decel_factor.
-    """
+    """Return consumed energy fraction at normalized time ``t_norm``."""
     if (seg.t_acc_s <= 0.0 and seg.t_dec_s <= 0.0) or seg.duration_s <= 0.0:
         return t_norm
 
@@ -36,8 +20,8 @@ def _cumulative_energy_frac(seg: RouteSegment, t_norm: float, drone) -> float:
     t_d = seg.t_dec_s
     t_c = max(0.0, seg.duration_s - t_a - t_d)
 
-    k_a = getattr(drone, 'power_accel_factor', 1.15) if drone else 1.15
-    k_d = getattr(drone, 'power_decel_factor', 1.05) if drone else 1.05
+    k_a = getattr(drone, "power_accel_factor", 1.15) if drone else 1.15
+    k_d = getattr(drone, "power_decel_factor", 1.05) if drone else 1.05
     total_eff = k_a * t_a + t_c + k_d * t_d
     if total_eff <= 0.0:
         return t_norm
@@ -53,15 +37,7 @@ def _cumulative_energy_frac(seg: RouteSegment, t_norm: float, drone) -> float:
 
 
 class VehicleCursor:
-    """
-    Tracks a single vehicle's position within its VehicleRoute.
-
-    Maintains:
-      - current segment index
-      - fractional progress along current segment [0.0, 1.0)
-      - accumulated resource state (energy_wh, reagent_l)
-      - done flag
-    """
+    """Track the current segment, progress, and resources of one vehicle."""
 
     def __init__(
         self,
@@ -71,8 +47,8 @@ class VehicleCursor:
         drone=None,
     ):
         self.route = route
-        self.seg_idx = 0
-        self.t = 0.0  # fractional progress in current segment
+        self.segment_index = 0
+        self.segment_progress = 0.0
         self.energy_wh = initial_energy_wh
         self.reagent_l = initial_reagent_l
         self.initial_energy_wh = initial_energy_wh
@@ -83,18 +59,12 @@ class VehicleCursor:
 
     @property
     def current_segment(self) -> RouteSegment | None:
-        if self.seg_idx >= len(self.route.segments):
+        if self.segment_index >= len(self.route.segments):
             return None
-        return self.route.segments[self.seg_idx]
+        return self.route.segments[self.segment_index]
 
     def advance(self, dt_real: float, playback_speed: float) -> None:
-        """
-        Advances cursor by dt_real * playback_speed simulated seconds.
-
-        Handles segment transitions and resource depletion.
-        Resources are consumed proportionally as the cursor moves through
-        each segment (not lump-sum at segment end).
-        """
+        """Advance the cursor by ``dt_real * playback_speed`` simulated seconds."""
         if self.done:
             return
 
@@ -102,66 +72,51 @@ class VehicleCursor:
         self.sim_time_s += dt_sim
         time_remaining = dt_sim
 
-        while time_remaining > 1e-6 and self.seg_idx < len(self.route.segments):
-            seg = self.route.segments[self.seg_idx]
+        while time_remaining > 1e-6 and self.segment_index < len(self.route.segments):
+            seg = self.route.segments[self.segment_index]
 
-            # Ensure minimum duration to avoid division by zero
             seg_duration = max(0.001, seg.duration_s)
-            time_in_seg = self.t * seg_duration
+            time_in_seg = self.segment_progress * seg_duration
             time_left_in_seg = seg_duration - time_in_seg
 
             if time_left_in_seg <= time_remaining + 1e-6:
-                # Finish this segment completely (with small tolerance)
-                t_norm_before = self.t
-                self.t = 1.0
+                t_norm_before = self.segment_progress
+                self.segment_progress = 1.0
 
-                # Energy: non-uniform drain following three-phase power profile
                 e_frac_before = _cumulative_energy_frac(seg, t_norm_before, self._drone)
                 self.energy_wh -= seg.energy_cost_wh * (1.0 - e_frac_before)
 
-                # Reagent: uniform in time (fixed-flow pump)
                 fraction_remaining = max(0.0, 1.0 - (time_in_seg / seg_duration))
                 self.reagent_l -= seg.reagent_consumed_l * fraction_remaining
 
                 time_remaining -= time_left_in_seg
                 prev_type = seg.segment_type
 
-                # Move to next segment
-                self.seg_idx += 1
-                self.t = 0.0
+                self.segment_index += 1
+                self.segment_progress = 0.0
 
-                # Recharge: when leaving a service segment reset battery/reagent
-                # so each new cycle starts from full resources.
-                if prev_type == SegmentType.service and self.seg_idx < len(self.route.segments):
+                if prev_type == SegmentType.service and self.segment_index < len(self.route.segments):
                     self.energy_wh = self.initial_energy_wh
                     self.reagent_l = self.initial_reagent_l
             else:
-                # Partial advance within segment
                 advance_fraction = time_remaining / seg_duration
-                t_norm_before = self.t
-                self.t = min(1.0, self.t + advance_fraction)
+                t_norm_before = self.segment_progress
+                self.segment_progress = min(1.0, self.segment_progress + advance_fraction)
 
-                # Energy: non-uniform drain following three-phase power profile
                 e_frac_before = _cumulative_energy_frac(seg, t_norm_before, self._drone)
-                e_frac_after = _cumulative_energy_frac(seg, self.t, self._drone)
+                e_frac_after = _cumulative_energy_frac(seg, self.segment_progress, self._drone)
                 self.energy_wh -= seg.energy_cost_wh * (e_frac_after - e_frac_before)
 
-                # Reagent: uniform in time (fixed-flow pump)
                 self.reagent_l -= seg.reagent_consumed_l * advance_fraction
 
                 time_remaining = 0.0
 
-        if self.seg_idx >= len(self.route.segments):
+        if self.segment_index >= len(self.route.segments):
             self.done = True
 
     def get_state(self, vehicle_id: str, drone) -> VehicleSimState:
-        """
-        Interpolates current position and returns VehicleSimState.
-        Heading is computed from the current segment direction vector.
-        battery_pct is derived from energy_wh vs. drone.battery_capacity_wh.
-        """
-        if self.done or self.seg_idx >= len(self.route.segments):
-            # Return final position
+        """Interpolate the current route state into an API frame."""
+        if self.done or self.segment_index >= len(self.route.segments):
             last_seg = self.route.segments[-1]
             pos = last_seg.p2
             return VehicleSimState(
@@ -199,30 +154,24 @@ class VehicleCursor:
                 is_done=True,
             )
 
-        # Interpolate position along current segment
-        # Clamp t to [0, 1] to avoid overshooting
-        t_clamped = max(0.0, min(1.0, self.t))
+        progress = max(0.0, min(1.0, self.segment_progress))
 
         if seg.distance_m > 1e-6:
-            x = seg.p1[0] + (seg.p2[0] - seg.p1[0]) * t_clamped
-            y = seg.p1[1] + (seg.p2[1] - seg.p1[1]) * t_clamped
+            x = seg.p1[0] + (seg.p2[0] - seg.p1[0]) * progress
+            y = seg.p1[1] + (seg.p2[1] - seg.p1[1]) * progress
         else:
-            # Zero-distance segment (stay at p1 = p2)
             x, y = seg.p1
 
-        # Compute heading
         if seg.distance_m > 1e-6:
             heading = math.degrees(math.atan2(seg.p2[1] - seg.p1[1], seg.p2[0] - seg.p1[0])) % 360
         else:
             heading = 0.0
 
-        # Compute speed (instantaneous speed during this segment)
         if seg.duration_s > 0:
             speed = seg.distance_m / seg.duration_s
         else:
             speed = 0.0
 
-        # Battery percentage
         if drone:
             battery_capacity = drone.battery_capacity_wh
             reserve_pct = drone.battery_reserve_pct
@@ -232,39 +181,39 @@ class VehicleCursor:
         else:
             battery_pct = 100.0
 
-        # Pump active only during spray segments
         pump_active = seg.segment_type == SegmentType.spray
-
-        # Handle service segment resource reset (conceptually battery/reagent reset here)
         energy_to_report = self.energy_wh
         reagent_to_report = self.reagent_l
 
         if seg.segment_type == SegmentType.service:
-            # At service segment, resources are "reset" for next cycle
-            # Report as full for visualization
-            energy_to_report = drone.battery_capacity_wh * (1.0 - drone.battery_reserve_pct / 100.0) if drone else self.energy_wh
+            energy_to_report = (
+                drone.battery_capacity_wh * (1.0 - drone.battery_reserve_pct / 100.0)
+                if drone
+                else self.energy_wh
+            )
             reagent_to_report = drone.mass_tank_full_kg if drone else self.reagent_l
             battery_pct = 100.0
 
         return VehicleSimState(
             vehicle_id=vehicle_id,
             x=x,
-            y=y,
-            heading=heading,
-            speed=speed,
-            segment_type=seg.segment_type,
-            cycle_index=seg.cycle_index,
-            waypoint_index=self.seg_idx,
-            battery_pct=battery_pct,
-            energy_remaining_wh=max(0.0, energy_to_report),
-            reagent_l=max(0.0, reagent_to_report),
+                y=y,
+                heading=heading,
+                speed=speed,
+                segment_type=seg.segment_type,
+                cycle_index=seg.cycle_index,
+                waypoint_index=self.segment_index,
+                battery_pct=battery_pct,
+                energy_remaining_wh=max(0.0, energy_to_report),
+                reagent_l=max(0.0, reagent_to_report),
             pump_active=pump_active,
             is_done=False,
         )
 
 
 class SimulationState:
-    """Mutable state that can be updated by client."""
+    """Mutable simulation controls shared with the websocket task."""
+
     def __init__(self):
         self.playback_speed = 1.0
 
@@ -276,13 +225,7 @@ async def stream_simulation(
     state: SimulationState,
     interval_ms: int = 200,
 ) -> AsyncGenerator[SimulationFrame, None]:
-    """
-    Yields SimulationFrame every interval_ms wall-clock milliseconds.
-
-    Simulation ends when both vehicles are done.
-
-    Uses a shared SimulationState object that can be updated to change playback_speed.
-    """
+    """Yield simulation frames until both vehicles finish their routes."""
     usable_wh = DroneEnergyModel(drone).usable_energy_wh()
     uav_cursor = VehicleCursor(
         uav_route,

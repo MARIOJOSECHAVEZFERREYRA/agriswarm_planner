@@ -7,26 +7,31 @@ Return dict matches SweepAngleOptimizer so downstream callers do not
 need to branch on strategy.
 """
 
+import logging
 import math
 import time
 
-from shapely.geometry import Polygon
-from shapely.ops import unary_union
 from shapely import affinity
+from shapely.geometry import Polygon
 
 from ..coverage.decomposition import ConcaveDecomposer
 from ..coverage.path_assembler import PathAssembler
 from ..simulation.mission_simulator import simulate_mission_with_rendezvous
+from .sweep_angle_optimizer import build_obstacle_union as _build_obstacle_union
 
 
-def _build_obstacle_union(polygon: Polygon):
-    if polygon.interiors:
-        return unary_union([Polygon(h.coords) for h in polygon.interiors])
-    return None
+logger = logging.getLogger(__name__)
 
 
 class GridSearchOptimizer:
     """Deterministic 180-angle scan. Winner minimizes mission time."""
+
+    # In dynamic mode, service time (t_service) dominates the fitness
+    # comparison across angles: one fewer cycle saves 300 s, dwarfing
+    # any deadhead savings from better polyline alignment.  Discount
+    # the per-stop service contribution so flight efficiency and
+    # alignment have room to influence the result.
+    _SERVICE_DISCOUNT = 0.3
 
     def __init__(self, planner, angle_step: int = 1,
                  energy_model=None, rendezvous_planner=None, w_rv: float = 0.5,
@@ -155,6 +160,72 @@ class GridSearchOptimizer:
         mission_time_s = flight_time_s + cycle_penalty
         return mission_time_s, flight_time_s
 
+    # ------------------------------------------------------------------
+    # Polyline alignment penalty (dynamic mode only)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pt_to_polyline_dist(px, py, polyline):
+        """Minimum Euclidean distance from (px, py) to a polyline."""
+        best = float('inf')
+        for i in range(len(polyline) - 1):
+            ax, ay = polyline[i]
+            bx, by = polyline[i + 1]
+            dx, dy = bx - ax, by - ay
+            sl2 = dx * dx + dy * dy
+            if sl2 < 1e-18:
+                continue
+            t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / sl2))
+            d = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+            if d < best:
+                best = d
+        return best
+
+    def _avg_min_endpoint_polyline_dist(self, route_segments):
+        """Average of min(dist(p1, polyline), dist(p2, polyline)) per sweep.
+
+        For each sweep segment, the drone can exit from either endpoint.
+        The endpoint closer to the UGV polyline determines the best-case
+        deadhead distance for that sweep.  Averaging these across all
+        sweeps measures how accessible the sweep endpoints are from the
+        UGV route.
+        """
+        poly = self.rendezvous_planner.ugv_polyline
+        total, n = 0.0, 0
+        for seg in route_segments:
+            if seg.get('segment_type') != 'sweep':
+                continue
+            path = seg.get('path', [])
+            if len(path) < 2:
+                continue
+            d1 = self._pt_to_polyline_dist(
+                float(path[0][0]), float(path[0][1]), poly)
+            d2 = self._pt_to_polyline_dist(
+                float(path[-1][0]), float(path[-1][1]), poly)
+            total += min(d1, d2)
+            n += 1
+        return total / n if n > 0 else 0.0
+
+    def _dynamic_fitness(self, rv_time, rv_count, route_segments):
+        """Fitness for dynamic mode: flight + discounted service + alignment.
+
+        Decouples flight efficiency from service count so that angles
+        with shorter deadheads to the UGV polyline are favored even if
+        they require one extra service stop.
+
+        The alignment term scales with rv_count because every cycle
+        pays a deadhead to the polyline.  ``w_rv`` (default 0.5)
+        controls the trade-off: higher values push harder toward
+        polyline-aligned sweep angles.
+        """
+        t_service = self.rendezvous_planner.t_service
+        v_uav = float(self.energy_model.drone.speed_max_ms)
+        flight_only = rv_time - rv_count * t_service
+        service_cost = rv_count * t_service * self._SERVICE_DISCOUNT
+        avg_min_dist = self._avg_min_endpoint_polyline_dist(route_segments)
+        alignment = self.w_rv * rv_count * avg_min_dist / v_uav
+        return flight_only + service_cost + alignment
+
     def _evaluate_angle(self, angle_deg, polygon, target_area_S,
                         obstacle_union, base_point):
         """Run the full pipeline for one angle and return metrics."""
@@ -198,9 +269,16 @@ class GridSearchOptimizer:
             return None
 
         # Fast sequencer: the winner is re-assembled with 'full' later.
+        # In dynamic mode, pass the UGV polyline so cells are ordered
+        # along the UGV's direction of travel.
+        ugv_poly = (
+            self.rendezvous_planner.ugv_polyline
+            if self._rv_enabled else None
+        )
         assembler = PathAssembler(
             sub_polygons, original_polygon=polygon,
             sequencer_mode='fast', base_point=base_point,
+            ugv_polyline=ugv_poly,
         )
         assembly_result = assembler.assemble_connected(all_sweep_segments)
         route_segments = assembly_result.get('route_segments', [])
@@ -211,9 +289,11 @@ class GridSearchOptimizer:
 
         # Deadhead: entry + exit legs, plus mid-mission returns when
         # the segmenter will break the route into several cycles.
+        # In dynamic mode the simulation accounts for all transit, so
+        # only compute static deadheads here.
         deadhead_m = 0.0
         n_cycles = 1
-        if base_point is not None and route_segments:
+        if not self._rv_enabled and base_point is not None and route_segments:
             bp = (float(base_point[0]), float(base_point[1]))
             _, d_entry = assembler.find_connection(bp, route_segments[0]['path'][0])
             _, d_exit = assembler.find_connection(route_segments[-1]['path'][-1], bp)
@@ -226,9 +306,14 @@ class GridSearchOptimizer:
             total_spray_distance, ferry_m, deadhead_m, n_cycles,
             n_turns=total_turn_count,
         )
-        total_l = mission_time_s
+        # Fitness: non-productive distance (ferry + deadhead). Aligned with
+        # the thesis objective of minimizing deadhead and non-productive
+        # energy, rather than total mission time.
+        total_l = ferry_m + deadhead_m
 
-        # Dynamic missions only: check the rendezvous simulation.
+        # Dynamic missions: co-simulate UAV-UGV rendezvous and use
+        # the simulation's total_time (flight + waits + service) as
+        # the ranking metric instead of flight-only mission_time.
         rv_feasible = True
         rv_wait = 0.0
         rv_time = 0.0
@@ -244,6 +329,9 @@ class GridSearchOptimizer:
             rv_wait = sim['total_wait_uav']
             rv_time = sim['total_time']
             rv_count = sim['n_rendezvous']
+            if rv_feasible:
+                total_l = self._dynamic_fitness(
+                    rv_time, rv_count, route_segments)
 
         return {
             'angle': angle_deg,
@@ -328,14 +416,19 @@ class GridSearchOptimizer:
         best['extra_coverage_pct'] = extra_cov
         best['gen_stats'] = gen_stats
 
-        mission_min = best['l'] / 60.0
-        print(
-            f"GridSearchOptimizer done in {elapsed:.2f}s "
-            f"({evaluated} angles evaluated, {infeasible} infeasible). "
-            f"Best angle: {best['angle']}° | "
-            f"mission={mission_min:.1f}min ({best['n_cycles']} cycles) | "
-            f"spray={best['spray_m']:.0f}m  ferry={best['ferry_m']:.0f}m  "
-            f"deadhead={best['deadhead_m']:.0f}m"
+        mission_min = best.get('mission_time_s', 0.0) / 60.0
+        logger.info(
+            "GridSearchOptimizer done in %.2fs (%s angles evaluated, %s infeasible) | angle=%s° mission=%.1fmin cycles=%s spray=%.0fm ferry=%.0fm deadhead=%.0fm non-prod=%.0fm",
+            elapsed,
+            evaluated,
+            infeasible,
+            best["angle"],
+            mission_min,
+            best["n_cycles"],
+            best["spray_m"],
+            best["ferry_m"],
+            best["deadhead_m"],
+            best["l"],
         )
         return best
 
@@ -344,9 +437,14 @@ class GridSearchOptimizer:
         sub_polygons = best['sub_polygons']
         all_sweep_segments = best['all_sweep_segments']
 
+        ugv_poly = (
+            self.rendezvous_planner.ugv_polyline
+            if self._rv_enabled else None
+        )
         assembler = PathAssembler(
             sub_polygons, original_polygon=polygon,
             sequencer_mode='full', base_point=base_point,
+            ugv_polyline=ugv_poly,
         )
         assembly_result = assembler.assemble_connected(all_sweep_segments)
         route_segments = assembly_result.get('route_segments', [])
@@ -357,7 +455,7 @@ class GridSearchOptimizer:
         best['route_distances'] = assembly_result.get('distances', {})
         best['ferry_m'] = float(best['route_distances'].get('ferry_m', 0.0))
 
-        if base_point is not None and route_segments:
+        if not self._rv_enabled and base_point is not None and route_segments:
             bp = (float(base_point[0]), float(base_point[1]))
             _, d_entry = assembler.find_connection(bp, route_segments[0]['path'][0])
             _, d_exit = assembler.find_connection(route_segments[-1]['path'][-1], bp)
@@ -369,9 +467,7 @@ class GridSearchOptimizer:
             best['deadhead_m'] = dh
             best['n_cycles'] = n_cycles
 
-        # Always recompute mission_time after updating ferry_m so the
-        # returned metrics stay consistent, even when base_point is None
-        # and the deadhead/cycle fields keep their fast-mode values.
+        # Recompute mission_time after updating ferry_m.
         turns = int(best.get('planner_metrics', {}).get('turn_count', 0))
         mission_time_s, flight_time_s = self._compute_mission_time(
             best['spray_m'], best['ferry_m'],
@@ -379,8 +475,26 @@ class GridSearchOptimizer:
             best.get('n_cycles', 1),
             n_turns=turns,
         )
-        best['l'] = mission_time_s
         best['mission_time_s'] = mission_time_s
         best['flight_time_s'] = flight_time_s
+        best['l'] = mission_time_s
+
+        # Dynamic mode: re-run simulation on the full-mode route for
+        # consistent final metrics.
+        if self._rv_enabled and route_segments:
+            sim = simulate_mission_with_rendezvous(
+                route_segments=route_segments,
+                energy_model=self.energy_model,
+                rendezvous_planner=self.rendezvous_planner,
+                assembler=assembler,
+            )
+            best['rv_feasible'] = sim['feasible']
+            best['rv_wait'] = sim['total_wait_uav']
+            best['rv_time'] = sim['total_time']
+            best['rv_count'] = sim['n_rendezvous']
+            if sim['feasible']:
+                best['l'] = self._dynamic_fitness(
+                    sim['total_time'], sim['n_rendezvous'],
+                    route_segments)
 
         return best

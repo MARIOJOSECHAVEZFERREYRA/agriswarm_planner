@@ -249,3 +249,103 @@ def test_two_opt_does_not_worsen_tour():
     # Upper bound: any valid permutation including the natural one
     natural = _ferry_cost(swps)
     assert c <= natural
+
+
+# ------------------------------------------------------------------
+# Polyline-aware sequencing (dynamic UGV mode)
+# ------------------------------------------------------------------
+
+def test_polyline_orders_cells_left_to_right():
+    """Cells should follow UGV polyline direction (left to right)."""
+    # cell 0 on the right, cell 1 on the left — polyline goes left→right
+    swps = [
+        {**_sweep((80, 0), (90, 0)), 'cell_id': 0},
+        {**_sweep((80, 5), (90, 5)), 'cell_id': 0},
+        {**_sweep((0, 0), (10, 0)),  'cell_id': 1},
+        {**_sweep((0, 5), (10, 5)),  'cell_id': 1},
+    ]
+    polyline = [(0, -20), (100, -20)]  # left to right
+    seq = SweepSequencer(
+        GeodesicSolver(None), 'fast',
+        base_point=(50, -30),
+        ugv_polyline=polyline,
+    )
+    out = seq.sequence(swps)
+    ids = [s['cell_id'] for s in out]
+    # Cell 1 (left) should come before cell 0 (right)
+    assert ids[:2] == [1, 1], f"expected cell 1 first: {ids}"
+    assert ids[2:] == [0, 0], f"expected cell 0 second: {ids}"
+
+
+def test_polyline_orders_cells_right_to_left():
+    """Reversed polyline reverses cell order."""
+    swps = [
+        {**_sweep((80, 0), (90, 0)), 'cell_id': 0},
+        {**_sweep((80, 5), (90, 5)), 'cell_id': 0},
+        {**_sweep((0, 0), (10, 0)),  'cell_id': 1},
+        {**_sweep((0, 5), (10, 5)),  'cell_id': 1},
+    ]
+    polyline = [(100, -20), (0, -20)]  # right to left
+    seq = SweepSequencer(
+        GeodesicSolver(None), 'fast',
+        ugv_polyline=polyline,
+    )
+    out = seq.sequence(swps)
+    ids = [s['cell_id'] for s in out]
+    # Cell 0 (right, near polyline start) should come first
+    assert ids[:2] == [0, 0], f"expected cell 0 first: {ids}"
+    assert ids[2:] == [1, 1], f"expected cell 1 second: {ids}"
+
+
+def test_polyline_three_cells_along_curved_path():
+    """Three cells along an L-shaped polyline are ordered correctly."""
+    # Polyline goes east then south: (0,0) → (100,0) → (100,-100)
+    # Cell A near (10,5), cell B near (90,5), cell C near (95,-80)
+    swps = [
+        {**_sweep((85, 0), (95, 0)),   'cell_id': 1},  # B (mid polyline)
+        {**_sweep((90, -85), (100, -85)), 'cell_id': 2},  # C (end polyline)
+        {**_sweep((5, 0), (15, 0)),     'cell_id': 0},  # A (start polyline)
+    ]
+    polyline = [(0, 0), (100, 0), (100, -100)]
+    seq = SweepSequencer(
+        GeodesicSolver(None), 'fast',
+        ugv_polyline=polyline,
+    )
+    out = seq.sequence(swps)
+    ids = [s['cell_id'] for s in out]
+    assert ids == [0, 1, 2], f"expected order [0,1,2]: {ids}"
+
+
+def test_polyline_preserves_cell_atomicity():
+    """Polyline mode still keeps all sweeps of a cell contiguous."""
+    swps = [
+        {**_sweep((0, 0), (5, 0)),   'cell_id': 0},
+        {**_sweep((0, 5), (5, 5)),   'cell_id': 0},
+        {**_sweep((0, 10), (5, 10)), 'cell_id': 0},
+        {**_sweep((50, 0), (55, 0)), 'cell_id': 1},
+        {**_sweep((50, 5), (55, 5)), 'cell_id': 1},
+    ]
+    polyline = [(0, -10), (60, -10)]
+    seq = SweepSequencer(
+        GeodesicSolver(None), 'fast',
+        ugv_polyline=polyline,
+    )
+    out = seq.sequence(swps)
+    ids = [s['cell_id'] for s in out]
+    transitions = sum(1 for i in range(len(ids) - 1) if ids[i] != ids[i + 1])
+    assert transitions == 1, f"cells interleaved: {ids}"
+
+
+def test_polyline_ignored_when_none():
+    """Without polyline, sequencer uses base-anchored NN (no change)."""
+    swps = [
+        {**_sweep((100, 0), (105, 0)), 'cell_id': 0},
+        {**_sweep((0, 0), (5, 0)),      'cell_id': 1},
+    ]
+    out = SweepSequencer(
+        GeodesicSolver(None), 'fast',
+        base_point=(-5, 0),
+        ugv_polyline=None,
+    ).sequence(swps)
+    # Cell 1 is closer to base — NN should pick it first
+    assert out[0]['cell_id'] == 1

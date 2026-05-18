@@ -1,8 +1,7 @@
-import math
-import numpy as np
 from shapely.geometry import LineString
 
 from .energy_model import DroneEnergyModel
+from ...utils.geometry import pts_equal, dist as _geo_dist, path_length as _geo_path_length
 
 
 class MissionSegmenter:
@@ -64,24 +63,9 @@ class MissionSegmenter:
     def _xy(point):
         return (float(point[0]), float(point[1]))
 
-    @staticmethod
-    def _pts_equal(a, b, tol=1e-6):
-        return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
-
-    @staticmethod
-    def _dist(a, b):
-        return math.hypot(b[0] - a[0], b[1] - a[1])
-
-    @staticmethod
-    def _path_length(path_coords):
-        if not path_coords or len(path_coords) < 2:
-            return 0.0
-        total = 0.0
-        for i in range(len(path_coords) - 1):
-            total += np.linalg.norm(
-                np.array(path_coords[i]) - np.array(path_coords[i + 1])
-            )
-        return float(total)
+    _pts_equal = staticmethod(pts_equal)
+    _dist = staticmethod(_geo_dist)
+    _path_length = staticmethod(_geo_path_length)
 
     # ------------------------------------------------------------------
     # Per-segment cost helpers
@@ -360,7 +344,7 @@ class MissionSegmenter:
                 # the atomic dict — this was the bug that lost cell_id.
                 cycle_segs.append(dict(seg))
                 e_rem -= self._segment_energy(stype, d, q_rem)
-                q_rem -= self._segment_liquid_use(stype, d)
+                q_rem = max(0.0, q_rem - self._segment_liquid_use(stype, d))
 
         def _split_run_atomically(run_segs):
             """Last-resort: pack a run segment-by-segment across cycles.

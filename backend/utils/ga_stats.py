@@ -1,9 +1,13 @@
 """GA statistics: convergence plot and JSON export."""
+
 import json
+import logging
 import os
+
 import numpy as np
 
 _RESULTS_DIR = os.path.join(os.path.dirname(__file__), '../../data/test_results')
+logger = logging.getLogger(__name__)
 
 
 def save_gen_stats_json(gen_stats: list[dict], field_name: str, drone_name: str = "",
@@ -18,7 +22,7 @@ def save_gen_stats_json(gen_stats: list[dict], field_name: str, drone_name: str 
     }
     with open(out_path, 'w') as f:
         json.dump(payload, f, indent=2)
-    print(f"GA stats saved to {os.path.relpath(out_path)}")
+    logger.info("GA stats saved to %s", os.path.relpath(out_path))
 
 
 def plot_2d_convergence(gen_stats: list[dict], title: str):
@@ -32,7 +36,6 @@ def plot_2d_convergence(gen_stats: list[dict], title: str):
     matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
     from matplotlib.collections import LineCollection
-    import matplotlib.cm as cm
 
     gens        = np.array([s['gen']          for s in gen_stats])
     mean_angle  = np.array([s['mean_angle']   for s in gen_stats])

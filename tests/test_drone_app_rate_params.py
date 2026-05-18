@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.controllers.mission_controller import MissionController
+from backend.services.mission_planner import MissionPlanner
 
 
 def make_drone(**overrides):
@@ -21,7 +21,7 @@ def make_drone(**overrides):
 
 
 def test_resolve_operational_params_uses_drone_app_rate_default():
-    ctrl = MissionController()
+    ctrl = MissionPlanner()
 
     _, app_rate, speed_kmh, calc_flow_l_min, margin_h = ctrl._resolve_operational_params(
         make_drone(),
@@ -35,7 +35,7 @@ def test_resolve_operational_params_uses_drone_app_rate_default():
 
 
 def test_resolve_operational_params_validates_drone_specific_app_rate_range():
-    ctrl = MissionController()
+    ctrl = MissionPlanner()
     drone = make_drone(app_rate_min_l_ha=7.0, app_rate_max_l_ha=9.0)
 
     with pytest.raises(ValueError, match="\\[7\\.0, 9\\.0\\].*Test Drone"):

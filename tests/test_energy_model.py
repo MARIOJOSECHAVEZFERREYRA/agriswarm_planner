@@ -1,5 +1,5 @@
 """
-Tests for DroneEnergyModel (backend/algorithms/drone/energy_model.py).
+Tests for DroneEnergyModel (backend/algorithms/energy/energy_model.py).
 Covers only the physics/energy model itself - no planner, simulator, or frontend.
 
 Reference drone: DJI Agras T30
@@ -10,7 +10,8 @@ Reference drone: DJI Agras T30
 
 import pytest
 from types import SimpleNamespace
-from backend.algorithms.drone.energy_model import DroneEnergyModel
+
+from backend.algorithms.energy.energy_model import DroneEnergyModel
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ boundary — only interior rings (real obstacles) constrain paths.
 from shapely.geometry import LineString, Polygon
 
 from .geodesic_solver import GeodesicSolver
+from ...utils.geometry import pts_equal
 from .sweep_sequencer import SweepSequencer
 
 
@@ -15,7 +16,8 @@ class PathAssembler:
     """Sequence sweeps and interleave ferries to form the mission route."""
 
     def __init__(self, sub_polygons, original_polygon=None,
-                 sequencer_mode='full', base_point=None):
+                 sequencer_mode='full', base_point=None,
+                 ugv_polyline=None):
         holes = self._extract_holes(sub_polygons, original_polygon)
         self._solver = GeodesicSolver(holes=holes)
 
@@ -28,6 +30,7 @@ class PathAssembler:
             mode=sequencer_mode,
             base_point=base_point,
             cell_adjacency=cell_adjacency,
+            ugv_polyline=ugv_polyline,
         )
 
     @staticmethod
@@ -141,9 +144,7 @@ class PathAssembler:
             },
         }
 
-    @staticmethod
-    def _pts_equal(a, b, tol=1e-6):
-        return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
+    _pts_equal = staticmethod(pts_equal)
 
     @staticmethod
     def _segment_record(path_coords, segment_type, spraying):

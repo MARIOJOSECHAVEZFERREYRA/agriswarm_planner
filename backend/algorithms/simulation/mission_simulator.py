@@ -12,18 +12,21 @@ Used by the GA and GridSearch optimizers to estimate the real mission
 time (flight + waits + service) in dynamic-mode fitness.
 """
 
-import math
-
-
 def _make_transit_fn(energy_model, q_reagent):
     """Closure around ``energy_transit`` with a fixed reagent mass."""
+
     def fn(distance_m):
         return energy_model.energy_transit(distance_m, q_reagent)
+
     return fn
 
 
-def simulate_mission_with_rendezvous(route_segments, energy_model,
-                                     rendezvous_planner, assembler=None):
+def simulate_mission_with_rendezvous(
+    route_segments,
+    energy_model,
+    rendezvous_planner,
+    assembler=None,
+):
     """Simulate a dynamic mission and return aggregate metrics.
 
     Parameters
@@ -60,19 +63,12 @@ def simulate_mission_with_rendezvous(route_segments, energy_model,
     v_uav = float(drone.speed_max_ms)
     t_service = rendezvous_planner.t_service
 
-    # Teleport the UAV to the first route point so the sim matches
-    # plan_dynamic_cycles; the opening deadhead from the polyline
-    # origin is out of scope.
     first_pt = route_segments[0].get('path', [None])[0]
     if first_pt is None:
         uav_pos = rendezvous_planner.initial_point()
     else:
         uav_pos = (float(first_pt[0]), float(first_pt[1]))
 
-    # Kinematic model: UGV is parked at current_s until the planner
-    # commits to a rendezvous. It does not drift forward during drone
-    # flight. UGV travel after commit is accounted for when computing
-    # t_ugv_arrival below.
     current_s = 0.0
     t = 0.0
     E_rem = e_max
@@ -91,7 +87,6 @@ def simulate_mission_with_rendezvous(route_segments, energy_model,
         if len(path) < 2 or dist < 1e-9:
             i += 1
             continue
-        # meeting point (updated at line current_s = rv_s below).
 
         if seg_type == 'sweep':
             e_seg = energy_model.energy_straight(dist, Q_rem)
@@ -106,7 +101,6 @@ def simulate_mission_with_rendezvous(route_segments, energy_model,
         E_after = E_rem - e_seg
         Q_after = max(0.0, Q_rem - q_seg)
 
-        # Feasibility probe for the post-segment state.
         rv_after = rendezvous_planner.find_best_rendezvous(
             uav_pos=p2,
             uav_energy_rem=E_after,
@@ -125,7 +119,6 @@ def simulate_mission_with_rendezvous(route_segments, energy_model,
             i += 1
             continue
 
-        # --- Service needed before this segment ---
         rv = rendezvous_planner.find_best_rendezvous(
             uav_pos=uav_pos,
             uav_energy_rem=E_rem,
@@ -169,7 +162,6 @@ def simulate_mission_with_rendezvous(route_segments, energy_model,
         uav_pos = rv_point
         E_rem = e_max
         Q_rem = q_max
-        # Retry the same segment (no i increment).
 
     return {
         'feasible': True,

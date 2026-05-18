@@ -1,27 +1,37 @@
-"""Serve test field polygons from data/test_fields/."""
-import json
 from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
+
+from backend.schemas.field import FieldDocument, FieldSummary
 
 router = APIRouter(prefix="/fields", tags=["fields"])
 
 FIELDS_DIR = Path(__file__).resolve().parents[2] / "tests" / "test_fields"
 
 
-def _all_fields() -> list[dict]:
-    fields = []
-    for f in sorted(FIELDS_DIR.rglob("*.json")):
-        category = f.parent.name  # basic / organic / stress_tests
-        fields.append({"name": f.stem, "category": category, "path": str(f)})
-    return fields
+def _iter_field_files() -> list[Path]:
+    return sorted(FIELDS_DIR.rglob("*.json"))
 
-@router.get("/")
+
+def _load_field_document(path: Path) -> FieldDocument:
+    try:
+        return FieldDocument.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:  # pragma: no cover - invalid fixtures should fail loudly
+        raise HTTPException(status_code=500, detail=f"Invalid field document: {path.name}") from exc
+
+
+@router.get("/", response_model=list[FieldSummary])
 def list_fields():
-    return [{"name": f["name"], "category": f["category"]} for f in _all_fields()]
+    return [
+        FieldSummary(name=path.stem, category=path.parent.name)
+        for path in _iter_field_files()
+    ]
 
-@router.get("/{name}")
+
+@router.get("/{name}", response_model=FieldDocument)
 def get_field(name: str):
-    for f in _all_fields():
-        if f["name"] == name:
-            return json.loads(Path(f["path"]).read_text())
+    for path in _iter_field_files():
+        if path.stem == name:
+            return _load_field_document(path)
     raise HTTPException(status_code=404, detail=f"Field '{name}' not found")

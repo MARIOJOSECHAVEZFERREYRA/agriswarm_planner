@@ -1,19 +1,18 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from backend.core.settings import get_settings
 
-DATABASE_URL = "sqlite:///./agriswarm.db"
-
+settings = get_settings()
+DATABASE_URL = settings.database_url
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},  # required for SQLite + FastAPI
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
 )
-
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
     pass
-
 
 def get_db():
     db = SessionLocal()

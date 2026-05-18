@@ -1,19 +1,5 @@
-"""
-route_builder.py
+"""Build simulated UAV and UGV routes from planned mission cycles."""
 
-Converts mission_cycles (from MissionSegmenter) into VehicleRoute objects
-for the UAV and UGV respectively.
-
-Key decision: ferry vs deadhead classification.
-  - A segment with spraying=False that starts and ends INSIDE the work polygon
-    boundary (both endpoints contained or on boundary) is a ferry.
-  - A segment with spraying=False where at least one endpoint is the base_point
-    OR is outside the polygon is a deadhead.
-
-This matches the semantic intent: ferry connects two sweep passes within the
-field, deadhead goes to/from the service location.
-"""
-import json
 import math
 from dataclasses import dataclass
 from typing import Optional
@@ -27,6 +13,7 @@ from backend.schemas.simulation import SegmentType
 @dataclass
 class RouteSegment:
     """A single segment in a vehicle's route."""
+
     p1: tuple[float, float]
     p2: tuple[float, float]
     segment_type: SegmentType
@@ -35,8 +22,6 @@ class RouteSegment:
     duration_s: float
     energy_cost_wh: float
     reagent_consumed_l: float
-    # Three-phase kinematic phase durations (s). Both 0.0 means no phase info
-    # (service/deadhead segments) → energy drains uniformly in simulation.
     t_acc_s: float = 0.0
     t_dec_s: float = 0.0
 
@@ -44,6 +29,7 @@ class RouteSegment:
 @dataclass
 class VehicleRoute:
     """Complete route for a vehicle."""
+
     vehicle_id: str
     segments: list[RouteSegment]
     total_duration_s: float
@@ -52,37 +38,24 @@ class VehicleRoute:
 
 
 class UAVRouteBuilder:
-    """
-    Builds the UAV VehicleRoute from mission_cycles.
-
-    The UAV visits every segment in every cycle: deadhead-out, sweep/ferry
-    passes, deadhead-back, service dwell.
-    """
+    """Build the simulated UAV route for each mission cycle."""
 
     def __init__(self, drone, work_polygon: Polygon):
         self.drone = drone
         self.energy_model = DroneEnergyModel(drone)
         self.polygon = work_polygon
 
-    def build(self, mission_cycles: list[dict],
-              service_duration_s: Optional[float] = None) -> VehicleRoute:
-        """
-        Parameters
-        ----------
-        mission_cycles : list of cycle dicts from MissionSegmenter.segment_path()
-            Each cycle has: path, segments, visual_groups, swath_width, base_point
-        service_duration_s : float, optional
-            Duration of each service dwell in seconds.
-            Defaults to drone.service_time_s when None.
-            Pass ugv_t_service here for mobile rendezvous missions so that the
-            UAV timeline matches the actual inter-rendezvous planning intervals.
-
-        Returns
-        -------
-        VehicleRoute for the UAV
-        """
-        svc_dur = float(service_duration_s) if service_duration_s is not None \
+    def build(
+        self,
+        mission_cycles: list[dict],
+        service_duration_s: Optional[float] = None,
+    ) -> VehicleRoute:
+        """Build a route that visits every cycle segment plus service stops."""
+        service_duration_s = (
+            float(service_duration_s)
+            if service_duration_s is not None
             else float(self.drone.service_time_s)
+        )
 
         segments = []
         total_energy = 0.0
@@ -103,8 +76,6 @@ class UAVRouteBuilder:
                 is_spraying = seg["spraying"]
                 explicit = seg.get("segment_type", "")
 
-                # Trust the explicit segment_type set by the segmenter; only fall
-                # back to geometric classification when the type is unknown.
                 if is_spraying:
                     seg_type = SegmentType.spray
                 elif explicit == "deadhead":
@@ -115,7 +86,6 @@ class UAVRouteBuilder:
                     seg_type = self._classify_segment(p1, p2, is_spraying, base_point)
                 distance = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
 
-                # Compute costs and three-phase timings for visualization accuracy
                 if seg_type == SegmentType.spray:
                     duration = self.energy_model.time_straight(distance)
                     energy_cost = self.energy_model.energy_straight(distance, reagent_remaining)
@@ -127,7 +97,6 @@ class UAVRouteBuilder:
                         self.drone.decel_horizontal_ms2,
                     )
                 else:
-                    # ferry or deadhead
                     duration = self.energy_model.time_transit(distance)
                     energy_cost = self.energy_model.energy_transit(distance, reagent_remaining)
                     reagent_cost = 0.0
@@ -159,19 +128,18 @@ class UAVRouteBuilder:
                 energy_remaining -= energy_cost
                 reagent_remaining -= reagent_cost
 
-            # Service dwell at end of each cycle
             service_seg = RouteSegment(
                 p1=base_point,
                 p2=base_point,
                 segment_type=SegmentType.service,
                 cycle_index=cycle_idx,
                 distance_m=0.0,
-                duration_s=svc_dur,
+                duration_s=service_duration_s,
                 energy_cost_wh=0.0,
                 reagent_consumed_l=0.0,
             )
             segments.append(service_seg)
-            total_duration += svc_dur
+            total_duration += service_duration_s
 
         return VehicleRoute(
             vehicle_id="uav",
@@ -188,26 +156,17 @@ class UAVRouteBuilder:
         is_spraying: bool,
         base_point: tuple[float, float],
     ) -> SegmentType:
-        """
-        Classifies a segment as spray, ferry, or deadhead.
-
-        Rules:
-        1. If is_spraying=True → SegmentType.spray
-        2. If either endpoint is the base_point (within 0.5m) → deadhead
-        3. If midpoint is inside the work polygon → ferry
-        4. Otherwise → deadhead
-        """
+        """Classify a non-spray leg as ferry or deadhead."""
         if is_spraying:
             return SegmentType.spray
 
-        BASE_TOL = 0.5  # meters
+        base_tolerance_m = 0.5
         p1_dist_to_base = math.hypot(p1[0] - base_point[0], p1[1] - base_point[1])
         p2_dist_to_base = math.hypot(p2[0] - base_point[0], p2[1] - base_point[1])
 
-        if p1_dist_to_base < BASE_TOL or p2_dist_to_base < BASE_TOL:
+        if p1_dist_to_base < base_tolerance_m or p2_dist_to_base < base_tolerance_m:
             return SegmentType.deadhead
 
-        # Check midpoint
         mid_x = (p1[0] + p2[0]) / 2
         mid_y = (p1[1] + p2[1]) / 2
         mid_pt = Point(mid_x, mid_y)
@@ -219,13 +178,7 @@ class UAVRouteBuilder:
 
 
 class UGVRouteBuilder:
-    """
-    Builds the UGV VehicleRoute.
-
-    Static mode  — UGV waits at the fixed base_point for the whole mission.
-    Mobile mode  — UGV travels along the user-defined polyline, stopping at
-                   each rendezvous point in sync with the UAV timeline.
-    """
+    """Build static or mobile UGV routes aligned to the UAV timeline."""
 
     def build_static(
         self,
@@ -233,10 +186,7 @@ class UGVRouteBuilder:
         uav_total_duration_s: float,
         ugv_garage: Optional[tuple[float, float]] = None,
     ) -> VehicleRoute:
-        """
-        Static mode: UGV waits at mission_cycles[0]["base_point"] for the
-        entire UAV mission duration.
-        """
+        """Build a waiting route for a fixed-base UGV."""
         if not mission_cycles:
             return VehicleRoute(
                 vehicle_id="ugv",
@@ -277,101 +227,98 @@ class UGVRouteBuilder:
         ugv_speed: float,
         ugv_t_service: float,
     ) -> VehicleRoute:
-        """
-        Mobile mode: UGV starts at ugv_polyline[0] and moves to each rendezvous
-        point (the base_point of every cycle except the last, which is the UAV's
-        final position rather than a rendezvous).  Between rendezvous events the
-        UGV drives at ugv_speed; after the last service it continues toward
-        ugv_polyline[-1].
-
-        Service segments in the UGV route are aligned to the UAV route's service
-        segment start times so both vehicles share the same simulation clock.
-
-        Parameters
-        ----------
-        mission_cycles : list of cycle dicts from MissionSegmenter.segment_path_mobile()
-        uav_route      : already-built VehicleRoute for the UAV
-        ugv_polyline   : user-defined route as list of [x, y] points
-        ugv_speed      : UGV cruise speed in m/s
-        ugv_t_service  : service dwell duration in seconds (same value used in planning)
-        """
+        """Build a moving UGV route that follows the mission rendezvous plan."""
         if not mission_cycles or not ugv_polyline or len(ugv_polyline) < 2:
             return self.build_static(mission_cycles, uav_route.total_duration_s)
 
         ugv_speed = max(float(ugv_speed), 0.1)
-        n_cycles  = len(mission_cycles)
-        ugv_poly  = [(float(p[0]), float(p[1])) for p in ugv_polyline]
+        cycle_count = len(mission_cycles)
+        ugv_path = [(float(point[0]), float(point[1])) for point in ugv_polyline]
 
-        # segment_path_mobile closes all cycles except the last at a rendezvous.
-        # The last cycle ends at the UAV's final position (not a rendezvous).
-        n_rv = max(0, n_cycles - 1)
-        rv_points: list[tuple[float, float]] = [
+        rendezvous_count = max(0, cycle_count - 1)
+        rendezvous_points: list[tuple[float, float]] = [
             (float(mission_cycles[i]["base_point"][0]),
              float(mission_cycles[i]["base_point"][1]))
-            for i in range(n_rv)
+            for i in range(rendezvous_count)
         ]
 
-        # Project each rv_point onto the polyline to get its distance_along.
-        rv_d = [self._find_distance_along(ugv_poly, rv) for rv in rv_points]
-        total_poly_len = self._polyline_length(ugv_poly)
+        rendezvous_distances = [
+            self._find_distance_along(ugv_path, point)
+            for point in rendezvous_points
+        ]
+        total_polyline_length = self._polyline_length(ugv_path)
 
-        # Extract service segment (start_time, duration) pairs from the UAV
-        # route in cycle order — there is exactly one service segment per cycle.
-        t_acc = 0.0
-        all_svc: list[tuple[float, float]] = []
+        elapsed_s = 0.0
+        service_windows: list[tuple[float, float]] = []
         for seg in uav_route.segments:
             if seg.segment_type == SegmentType.service:
-                all_svc.append((t_acc, seg.duration_s))
-            t_acc += seg.duration_s
+                service_windows.append((elapsed_s, seg.duration_s))
+            elapsed_s += seg.duration_s
 
-        # Only the first n_rv services correspond to real rendezvous events.
-        rv_svc = all_svc[:n_rv]
+        rendezvous_windows = service_windows[:rendezvous_count]
 
         total_uav_dur = uav_route.total_duration_s
         segments: list[RouteSegment] = []
 
-        if n_rv == 0 or not rv_svc:
-            # No rendezvous — UGV traverses its full polyline over the mission
-            self._append_polyline_transit(
-                segments, ugv_poly, total_uav_dur, ugv_speed, cycle_index=0
-            )
+        if rendezvous_count == 0 or not rendezvous_windows:
+            self._append_polyline_transit(segments, ugv_path, total_uav_dur, ugv_speed, cycle_index=0)
         else:
-            # Phase 0: polyline start → first rendezvous (following the polyline)
-            T0_start, _ = rv_svc[0]
-            path0 = self._subpath_along(ugv_poly, 0.0, rv_d[0])
-            self._append_polyline_transit(segments, path0, T0_start, ugv_speed, cycle_index=0)
+            first_service_start_s, _ = rendezvous_windows[0]
+            initial_path = self._subpath_along(ugv_path, 0.0, rendezvous_distances[0])
+            self._append_polyline_transit(
+                segments,
+                initial_path,
+                first_service_start_s,
+                ugv_speed,
+                cycle_index=0,
+            )
 
-            for i in range(n_rv):
-                t_svc_start, svc_dur = rv_svc[i]
+            for i in range(rendezvous_count):
+                service_start_s, service_duration_s = rendezvous_windows[i]
 
-                # Service dwell at rendezvous i
                 segments.append(RouteSegment(
-                    p1=rv_points[i], p2=rv_points[i],
+                    p1=rendezvous_points[i], p2=rendezvous_points[i],
                     segment_type=SegmentType.service,
                     cycle_index=i,
                     distance_m=0.0,
-                    duration_s=max(svc_dur, 0.001),
+                    duration_s=max(service_duration_s, 0.001),
                     energy_cost_wh=0.0,
                     reagent_consumed_l=0.0,
                 ))
 
-                if i + 1 < n_rv:
-                    # Transit to next rendezvous within the inter-service window,
-                    # following the actual polyline between the two distances.
-                    t_next_start, _ = rv_svc[i + 1]
-                    available = max(t_next_start - (t_svc_start + svc_dur), 0.001)
-                    path_i = self._subpath_along(ugv_poly, rv_d[i], rv_d[i + 1])
+                if i + 1 < rendezvous_count:
+                    next_service_start_s, _ = rendezvous_windows[i + 1]
+                    available_s = max(
+                        next_service_start_s - (service_start_s + service_duration_s),
+                        0.001,
+                    )
+                    next_path = self._subpath_along(
+                        ugv_path,
+                        rendezvous_distances[i],
+                        rendezvous_distances[i + 1],
+                    )
                     self._append_polyline_transit(
-                        segments, path_i, available, ugv_speed, cycle_index=i
+                        segments,
+                        next_path,
+                        available_s,
+                        ugv_speed,
+                        cycle_index=i,
                     )
 
-            # Final phase: last rendezvous → polyline end
-            last_t_start, last_dur = rv_svc[-1]
-            remaining = total_uav_dur - (last_t_start + last_dur)
-            if remaining > 0.001:
-                path_final = self._subpath_along(ugv_poly, rv_d[-1], total_poly_len)
+            last_service_start_s, last_service_duration_s = rendezvous_windows[-1]
+            remaining_s = total_uav_dur - (last_service_start_s + last_service_duration_s)
+            if remaining_s > 0.001:
+                final_path = self._subpath_along(
+                    ugv_path,
+                    rendezvous_distances[-1],
+                    total_polyline_length,
+                )
                 self._append_polyline_transit(
-                    segments, path_final, remaining, ugv_speed, cycle_index=n_rv - 1
+                    segments,
+                    final_path,
+                    remaining_s,
+                    ugv_speed,
+                    cycle_index=rendezvous_count - 1,
                 )
 
         total_duration = sum(seg.duration_s for seg in segments)
@@ -382,10 +329,6 @@ class UGVRouteBuilder:
             total_energy_wh=0.0,
             total_reagent_l=0.0,
         )
-
-    # ------------------------------------------------------------------
-    # Polyline geometry helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _polyline_length(polyline: list) -> float:
@@ -415,12 +358,9 @@ class UGVRouteBuilder:
 
     @staticmethod
     def _find_distance_along(polyline: list, point: tuple) -> float:
-        """
-        Project point onto polyline; return its accumulated distance along it.
-        Finds the closest perpendicular projection across all segments.
-        """
-        min_dist = float('inf')
-        best_d   = 0.0
+        """Project a point onto a polyline and return accumulated distance."""
+        min_dist = float("inf")
+        best_d = 0.0
         accumulated = 0.0
         for i in range(len(polyline) - 1):
             p1 = polyline[i]
@@ -431,8 +371,10 @@ class UGVRouteBuilder:
             if seg_len_sq < 1e-18:
                 continue
             seg_len = math.sqrt(seg_len_sq)
-            t = max(0.0, min(1.0,
-                ((point[0] - p1[0]) * dx + (point[1] - p1[1]) * dy) / seg_len_sq))
+            t = max(
+                0.0,
+                min(1.0, ((point[0] - p1[0]) * dx + (point[1] - p1[1]) * dy) / seg_len_sq),
+            )
             px = p1[0] + t * dx
             py = p1[1] + t * dy
             dist = math.hypot(point[0] - px, point[1] - py)
@@ -444,18 +386,14 @@ class UGVRouteBuilder:
 
     @staticmethod
     def _subpath_along(polyline: list, d_from: float, d_to: float) -> list:
-        """
-        Extract the sub-path of polyline between accumulated distances d_from
-        and d_to.  Returns a list of (x, y) that follows the actual polyline
-        vertices.  Always includes interpolated start and end points.
-        """
+        """Extract the polyline subpath between two accumulated distances."""
         if d_to <= d_from + 1e-6:
             pt = UGVRouteBuilder._interp_at_distance(polyline, d_from)
             return [pt, pt]
 
         p_start = UGVRouteBuilder._interp_at_distance(polyline, d_from)
-        p_end   = UGVRouteBuilder._interp_at_distance(polyline, d_to)
-        path    = [p_start]
+        p_end = UGVRouteBuilder._interp_at_distance(polyline, d_to)
+        path = [p_start]
         accumulated = 0.0
 
         for i in range(len(polyline) - 1):
@@ -463,7 +401,6 @@ class UGVRouteBuilder:
             p2 = polyline[i + 1]
             seg_len = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
             vertex_d = accumulated + seg_len
-            # Include interior vertices that fall strictly between d_from and d_to
             if d_from + 1e-6 < vertex_d < d_to - 1e-6:
                 path.append((float(p2[0]), float(p2[1])))
             accumulated = vertex_d
@@ -480,14 +417,7 @@ class UGVRouteBuilder:
         ugv_speed: float,
         cycle_index: int,
     ) -> None:
-        """
-        Append route segments that make the UGV follow path within available_s.
-
-        - Each sub-segment of path becomes its own RouteSegment (deadhead).
-        - If actual travel < available_s: a service (wait) segment pads the end.
-        - If actual travel > available_s: time is compressed proportionally.
-        - Degenerate path (< 2 pts or zero length): single wait segment only.
-        """
+        """Append UGV motion or wait segments to fill an available time window."""
         available_s = max(float(available_s), 0.001)
 
         if len(path) < 2:
@@ -543,7 +473,6 @@ class UGVRouteBuilder:
                     energy_cost_wh=0.0, reagent_consumed_l=0.0,
                 ))
         else:
-            # Compress: distribute available_s proportionally across sub-segments
             for i in range(len(path) - 1):
                 d = sub_dists[i]
                 if d < 1e-9:

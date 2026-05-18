@@ -15,17 +15,16 @@ usable 'cell_id'.
 
 import math
 
+from ...utils.geometry import dist as _eu
+
 
 _MAX_2OPT_ITERS = 20
 _POINT_TOL = 1e-9
 
 
-def _eu(a, b):
-    return math.hypot(a[0] - b[0], a[1] - b[1])
-
-
 class SweepSequencer:
-    def __init__(self, solver, mode='full', base_point=None, cell_adjacency=None):
+    def __init__(self, solver, mode='full', base_point=None,
+                 cell_adjacency=None, ugv_polyline=None):
         if mode not in ('fast', 'full'):
             raise ValueError("mode must be 'fast' or 'full'")
         self._solver = solver
@@ -37,6 +36,13 @@ class SweepSequencer:
         # Optional adjacency graph (cell_id -> {cell_ids}). Consecutive
         # cells in the tour must share a physical boundary when present.
         self._cell_adjacency = cell_adjacency
+        # UGV polyline for dynamic mode: cells are ordered along polyline
+        # progression instead of proximity to base_point.
+        self._ugv_polyline = (
+            [(float(p[0]), float(p[1])) for p in ugv_polyline]
+            if ugv_polyline is not None and len(ugv_polyline) >= 2
+            else None
+        )
 
     # ------------------------------------------------------------------
 
@@ -108,7 +114,128 @@ class SweepSequencer:
             return [self._clone(s) for s in cell]
         return [self._flip_sweep(sw) for sw in reversed(cell)]
 
+    # ------------------------------------------------------------------
+    # Polyline projection helpers (dynamic mode)
+    # ------------------------------------------------------------------
+
+    def _project_onto_polyline(self, point):
+        """Return distance-along-polyline of the closest point on polyline.
+
+        O(V) where V is the number of polyline vertices.
+        """
+        poly = self._ugv_polyline
+        px, py = float(point[0]), float(point[1])
+        best_dist_sq = math.inf
+        best_d_along = 0.0
+        accumulated = 0.0
+
+        for i in range(len(poly) - 1):
+            ax, ay = poly[i]
+            bx, by = poly[i + 1]
+            dx, dy = bx - ax, by - ay
+            seg_len_sq = dx * dx + dy * dy
+            if seg_len_sq < 1e-18:
+                continue
+            seg_len = math.sqrt(seg_len_sq)
+            t = max(0.0, min(1.0,
+                ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+            proj_x = ax + t * dx
+            proj_y = ay + t * dy
+            dist_sq = (px - proj_x) ** 2 + (py - proj_y) ** 2
+            if dist_sq < best_dist_sq:
+                best_dist_sq = dist_sq
+                best_d_along = accumulated + t * seg_len
+            accumulated += seg_len
+
+        return best_d_along
+
+    @staticmethod
+    def _cell_centroid(cell):
+        """Average of all sweep midpoints in a cell."""
+        sx, sy, n = 0.0, 0.0, 0
+        for sw in cell:
+            path = sw['path']
+            if len(path) >= 2:
+                mx = (path[0][0] + path[-1][0]) / 2.0
+                my = (path[0][1] + path[-1][1]) / 2.0
+                sx += mx
+                sy += my
+                n += 1
+        if n == 0:
+            return (0.0, 0.0)
+        return (sx / n, sy / n)
+
+    # ------------------------------------------------------------------
+
     def _sequence_cells(self, cells, cell_ids):
+        """Order cells and emit flat sweeps.
+
+        Two modes:
+          * UGV polyline provided (dynamic): order cells by their
+            centroid's projection onto the polyline so the UAV works
+            in the same direction the UGV travels.
+          * Otherwise (static): base-anchored NN + 2-opt with
+            adjacency preference.
+        """
+        if self._ugv_polyline is not None:
+            return self._sequence_cells_along_polyline(cells, cell_ids)
+        return self._sequence_cells_nn(cells, cell_ids)
+
+    def _sequence_cells_along_polyline(self, cells, cell_ids):
+        """Order cells by centroid projection onto the UGV polyline."""
+        n = len(cells)
+
+        # Project each cell centroid onto polyline.
+        projections = []
+        for idx in range(n):
+            centroid = self._cell_centroid(cells[idx])
+            d_along = self._project_onto_polyline(centroid)
+            projections.append((d_along, idx))
+        projections.sort()
+
+        order = [idx for _, idx in projections]
+        states = [False] * n
+
+        # Choose forward/reverse for each cell to minimize transition
+        # to the next cell (greedy scan).
+        for k in range(len(order)):
+            idx = order[k]
+            if k + 1 < len(order):
+                next_idx = order[k + 1]
+                # Evaluate which orientation connects better to next cell.
+                _, nat_exit = self._cell_endpoints(cells[idx], False)
+                _, rev_exit = self._cell_endpoints(cells[idx], True)
+                next_nat_entry, _ = self._cell_endpoints(cells[next_idx], False)
+                next_rev_entry, _ = self._cell_endpoints(cells[next_idx], True)
+                d_best_next = min(
+                    self._dist(nat_exit, next_nat_entry),
+                    self._dist(nat_exit, next_rev_entry),
+                )
+                d_best_next_rev = min(
+                    self._dist(rev_exit, next_nat_entry),
+                    self._dist(rev_exit, next_rev_entry),
+                )
+                states[idx] = d_best_next_rev < d_best_next
+            else:
+                # Last cell: orient toward base if available,
+                # otherwise keep natural.
+                if self._base is not None:
+                    _, nat_exit = self._cell_endpoints(cells[idx], False)
+                    _, rev_exit = self._cell_endpoints(cells[idx], True)
+                    states[idx] = (
+                        self._dist(rev_exit, self._base)
+                        < self._dist(nat_exit, self._base)
+                    )
+
+        # 2-opt refinement (position 0 pinned).
+        order, states = self._two_opt_cells(cells, order, states, cell_ids)
+
+        flat = []
+        for idx in order:
+            flat.extend(self._flatten_cell(cells[idx], states[idx]))
+        return flat
+
+    def _sequence_cells_nn(self, cells, cell_ids):
         """Order cells via base-anchored NN + 2-opt, then emit flat sweeps.
 
         When a cell adjacency graph is provided, NN prefers neighbors

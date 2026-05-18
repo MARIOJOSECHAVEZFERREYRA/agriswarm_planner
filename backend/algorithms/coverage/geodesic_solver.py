@@ -7,10 +7,10 @@ heuristic. Used by PathAssembler for both ferries and deadheads.
 import heapq
 import math
 from collections import defaultdict
-
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 from shapely.prepared import prep
+from ...utils.geometry import pts_equal as _pts_equal
 
 
 _COORD_QUANT = 1_000_000_000  # dedup vertices at 9 decimals
@@ -20,10 +20,6 @@ _POINT_TOL = 1e-9
 def _quant(pt):
     return (round(pt[0] * _COORD_QUANT) / _COORD_QUANT,
             round(pt[1] * _COORD_QUANT) / _COORD_QUANT)
-
-
-def _pts_equal(a, b, tol=1e-6):
-    return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
 
 
 class GeodesicSolver:
@@ -165,7 +161,6 @@ class GeodesicSolver:
         """
         if self._holes_union is None:
             return pt
-        from shapely.geometry import Point
         p = Point(pt)
         if p.distance(self._holes_union) > self._SNAP_EPSILON:
             return pt
