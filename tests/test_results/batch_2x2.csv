@@ -1,0 +1,2 @@
+category,field,is_dynamic,heuristic_angle,grid_angle,S1_dead_km,S2_dead_km,S3_dead_km,S4_dead_km,S1_energy_wh,S2_energy_wh,S3_energy_wh,S4_energy_wh,dead_opt_static_pct,dead_dyn_heur_pct,dead_opt_dyn_pct,dead_combined_pct,dead_interaction_pct,energy_opt_static_pct,energy_dyn_heur_pct,energy_opt_dyn_pct,energy_combined_pct,energy_interaction_pct
+ftw,brazil_1239,1,23.0,102,15.421,1.471,11.714,10.041,6430.646,2006.758,4428.386,3585.225,24.04,90.46,-582.53,34.89,526.96,31.14,68.79,-78.66,44.25,54.11

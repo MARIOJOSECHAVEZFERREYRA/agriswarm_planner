@@ -89,15 +89,26 @@ export default function DroneSpecsView({ droneName, onBack }) {
 
   useEffect(() => {
     if (!droneName) return
+
+    const controller = new AbortController()
     setSpecs(null)
     setError(null)
-    fetch(`/drones/${encodeURIComponent(droneName)}`)
-      .then(r => {
-        if (!r.ok) throw new Error('Drone not found')
-        return r.json()
+
+    fetch(`/drones/${encodeURIComponent(droneName)}`, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Drone not found')
+        }
+        return response.json()
       })
       .then(setSpecs)
-      .catch(e => setError(e.message))
+      .catch(error => {
+        if (error.name !== 'AbortError') {
+          setError(error.message)
+        }
+      })
+
+    return () => controller.abort()
   }, [droneName])
 
   if (error) return <div style={s.error}>{error}</div>

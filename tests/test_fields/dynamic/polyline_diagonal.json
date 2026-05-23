@@ -1,0 +1,67 @@
+{
+    "name": "polyline_diagonal",
+    "description": "Irregular pentagon with UGV cutting diagonally SW to NE along a farm access road. Polyline stays 30-50m outside the field boundary with intermediate waypoints for realistic path curvature. Tests that cell ordering follows diagonal progression.",
+    "boundary": [
+        [
+            0,
+            50
+        ],
+        [
+            200,
+            0
+        ],
+        [
+            450,
+            30
+        ],
+        [
+            400,
+            350
+        ],
+        [
+            50,
+            300
+        ]
+    ],
+    "obstacles": [],
+    "base_point": [
+        -40,
+        -30
+    ],
+    "ugv_polyline": [
+        [
+            -40,
+            -30
+        ],
+        [
+            30,
+            10
+        ],
+        [
+            110,
+            55
+        ],
+        [
+            180,
+            110
+        ],
+        [
+            250,
+            170
+        ],
+        [
+            320,
+            240
+        ],
+        [
+            380,
+            310
+        ],
+        [
+            430,
+            380
+        ]
+    ],
+    "ugv_speed": 2.0,
+    "ugv_t_service": 300
+}

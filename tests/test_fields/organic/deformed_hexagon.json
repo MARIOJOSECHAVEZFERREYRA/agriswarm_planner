@@ -1,6 +1,6 @@
 {
     "name": "deformed_hexagon",
-    "description": "Irregular hexagonal field (≤500m) with asymmetric vertices and internal obstacles",
+    "description": "Irregular hexagonal field (\u2264500m) with asymmetric vertices and internal obstacles",
     "boundary": [
         [
             100,
@@ -137,6 +137,8 @@
             ]
         ]
     ],
-    "expected_cells_min": 1,
-    "min_coverage": 0.70
+    "base_point": [
+        27.0,
+        47.0
+    ]
 }

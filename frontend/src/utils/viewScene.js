@@ -31,7 +31,7 @@ export function getEdgeSegments(points, closed = true) {
   })
 }
 
-export function isClosedPreview(points) {
+function isClosedPreview(points) {
   return Array.isArray(points) && points.length >= 3
 }
 

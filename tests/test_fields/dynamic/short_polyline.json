@@ -1,0 +1,39 @@
+{
+    "name": "short_polyline",
+    "description": "Medium field with short UGV polyline (120m). Stress-tests RV selection when polyline candidates exhaust after a few cycles. Later cycles should cluster at the polyline tip.",
+    "boundary": [
+        [
+            0,
+            0
+        ],
+        [
+            300,
+            0
+        ],
+        [
+            300,
+            250
+        ],
+        [
+            0,
+            250
+        ]
+    ],
+    "obstacles": [],
+    "base_point": [
+        310,
+        125
+    ],
+    "ugv_polyline": [
+        [
+            2.1,
+            -12.3
+        ],
+        [
+            296.3,
+            -13.8
+        ]
+    ],
+    "ugv_speed": 1.5,
+    "ugv_t_service": 300
+}

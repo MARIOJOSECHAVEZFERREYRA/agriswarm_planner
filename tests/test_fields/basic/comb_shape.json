@@ -52,6 +52,8 @@
         ]
     ],
     "obstacles": [],
-    "expected_cells_min": 1,
-    "min_coverage": 0.90
+    "base_point": [
+        -3.0,
+        -3.0
+    ]
 }

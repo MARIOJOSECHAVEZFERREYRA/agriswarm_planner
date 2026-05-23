@@ -13,6 +13,10 @@ export default defineConfig({
       '/fields':  'http://localhost:8000',
       '/drones':  'http://localhost:8000',
       '/health':  'http://localhost:8000',
+      '/simulation': {
+        target: 'ws://localhost:8000',
+        ws: true,
+      },
     },
   },
 })

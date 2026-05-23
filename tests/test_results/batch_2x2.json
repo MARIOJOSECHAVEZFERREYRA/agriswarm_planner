@@ -1,0 +1,299 @@
+{
+  "config": {
+    "drone": "DJI Agras T30",
+    "optimizer": "grid",
+    "angle_step": 1
+  },
+  "summary": {
+    "n_fields": 1,
+    "n_dynamic_fields": 1,
+    "global": {
+      "dead_km": {
+        "optimization_static": {
+          "mean": 24.03764104515297,
+          "median": 24.03764104515297,
+          "stdev": 0.0,
+          "min": 24.03764104515297,
+          "max": 24.03764104515297,
+          "n": 1
+        },
+        "optimization_dynamic": {
+          "mean": -582.5303280699047,
+          "median": -582.5303280699047,
+          "stdev": 0.0,
+          "min": -582.5303280699047,
+          "max": -582.5303280699047,
+          "n": 1
+        },
+        "dynamic_heuristic": {
+          "mean": 90.46010324351221,
+          "median": 90.46010324351221,
+          "stdev": 0.0,
+          "min": 90.46010324351221,
+          "max": 90.46010324351221,
+          "n": 1
+        },
+        "combined": {
+          "mean": 34.88731137041361,
+          "median": 34.88731137041361,
+          "stdev": 0.0,
+          "min": 34.88731137041361,
+          "max": 34.88731137041361,
+          "n": 1
+        },
+        "interaction": {
+          "mean": 526.9575361968061,
+          "median": 526.9575361968061,
+          "stdev": 0.0,
+          "min": 526.9575361968061,
+          "max": 526.9575361968061,
+          "n": 1
+        },
+        "n_positive_interactions": 1,
+        "n_combined_improved": 1,
+        "n_dynamic": 1
+      },
+      "energy_wh": {
+        "optimization_static": {
+          "mean": 31.136209171005824,
+          "median": 31.136209171005824,
+          "stdev": 0.0,
+          "min": 31.136209171005824,
+          "max": 31.136209171005824,
+          "n": 1
+        },
+        "optimization_dynamic": {
+          "mean": -78.6575467774555,
+          "median": -78.6575467774555,
+          "stdev": 0.0,
+          "min": -78.6575467774555,
+          "max": -78.6575467774555,
+          "n": 1
+        },
+        "dynamic_heuristic": {
+          "mean": 68.79382999384701,
+          "median": 68.79382999384701,
+          "stdev": 0.0,
+          "min": 68.79382999384701,
+          "max": 68.79382999384701,
+          "n": 1
+        },
+        "combined": {
+          "mean": 44.24782222380493,
+          "median": 44.24782222380493,
+          "stdev": 0.0,
+          "min": 44.24782222380493,
+          "max": 44.24782222380493,
+          "n": 1
+        },
+        "interaction": {
+          "mean": 54.11153900741341,
+          "median": 54.11153900741341,
+          "stdev": 0.0,
+          "min": 54.11153900741341,
+          "max": 54.11153900741341,
+          "n": 1
+        },
+        "n_positive_interactions": 1,
+        "n_combined_improved": 1,
+        "n_dynamic": 1
+      }
+    },
+    "by_category": {
+      "ftw": {
+        "n_fields": 1,
+        "n_dynamic_fields": 1,
+        "dead_km": {
+          "optimization_static": {
+            "mean": 24.03764104515297,
+            "median": 24.03764104515297,
+            "stdev": 0.0,
+            "min": 24.03764104515297,
+            "max": 24.03764104515297,
+            "n": 1
+          },
+          "optimization_dynamic": {
+            "mean": -582.5303280699047,
+            "median": -582.5303280699047,
+            "stdev": 0.0,
+            "min": -582.5303280699047,
+            "max": -582.5303280699047,
+            "n": 1
+          },
+          "dynamic_heuristic": {
+            "mean": 90.46010324351221,
+            "median": 90.46010324351221,
+            "stdev": 0.0,
+            "min": 90.46010324351221,
+            "max": 90.46010324351221,
+            "n": 1
+          },
+          "combined": {
+            "mean": 34.88731137041361,
+            "median": 34.88731137041361,
+            "stdev": 0.0,
+            "min": 34.88731137041361,
+            "max": 34.88731137041361,
+            "n": 1
+          },
+          "interaction": {
+            "mean": 526.9575361968061,
+            "median": 526.9575361968061,
+            "stdev": 0.0,
+            "min": 526.9575361968061,
+            "max": 526.9575361968061,
+            "n": 1
+          },
+          "n_positive_interactions": 1,
+          "n_combined_improved": 1,
+          "n_dynamic": 1
+        },
+        "energy_wh": {
+          "optimization_static": {
+            "mean": 31.136209171005824,
+            "median": 31.136209171005824,
+            "stdev": 0.0,
+            "min": 31.136209171005824,
+            "max": 31.136209171005824,
+            "n": 1
+          },
+          "optimization_dynamic": {
+            "mean": -78.6575467774555,
+            "median": -78.6575467774555,
+            "stdev": 0.0,
+            "min": -78.6575467774555,
+            "max": -78.6575467774555,
+            "n": 1
+          },
+          "dynamic_heuristic": {
+            "mean": 68.79382999384701,
+            "median": 68.79382999384701,
+            "stdev": 0.0,
+            "min": 68.79382999384701,
+            "max": 68.79382999384701,
+            "n": 1
+          },
+          "combined": {
+            "mean": 44.24782222380493,
+            "median": 44.24782222380493,
+            "stdev": 0.0,
+            "min": 44.24782222380493,
+            "max": 44.24782222380493,
+            "n": 1
+          },
+          "interaction": {
+            "mean": 54.11153900741341,
+            "median": 54.11153900741341,
+            "stdev": 0.0,
+            "min": 54.11153900741341,
+            "max": 54.11153900741341,
+            "n": 1
+          },
+          "n_positive_interactions": 1,
+          "n_combined_improved": 1,
+          "n_dynamic": 1
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "category": "ftw",
+      "field": "brazil_1239",
+      "is_dynamic_field": true,
+      "heuristic_angle_deg": 23.047805715516347,
+      "grid_angle_deg": 102.0,
+      "scenarios": {
+        "S1_heur_static": {
+          "angle": 23.0,
+          "n_cycles": 14,
+          "area_ha": 9.999803035,
+          "spray_km": 10.096039069735916,
+          "dead_km": 15.420599350119247,
+          "deadhead_km": 14.664588814757444,
+          "ferry_km": 0.7560105353618026,
+          "energy_total_wh": 13780.874232887254,
+          "energy_spray_wh": 7350.228656326869,
+          "energy_deadhead_wh": 5071.30283551366,
+          "energy_ferry_wh": 1359.3427410467193,
+          "energy_nonprod_wh": 6430.64557656038,
+          "efficiency_pct": 90.8661413725768,
+          "rv_n": 0,
+          "rv_wait_min": 0.0,
+          "elapsed_s": 0.0397782139989431
+        },
+        "S2_heur_dynamic": {
+          "angle": 23.0,
+          "n_cycles": 10,
+          "area_ha": 9.999803035,
+          "spray_km": 10.096039069735918,
+          "dead_km": 1.471109257233005,
+          "deadhead_km": 0.697099693911401,
+          "ferry_km": 0.774009563321604,
+          "energy_total_wh": 9356.986847441456,
+          "energy_spray_wh": 7350.228656326869,
+          "energy_deadhead_wh": 615.0512461096171,
+          "energy_ferry_wh": 1391.706945004972,
+          "energy_nonprod_wh": 2006.7581911145892,
+          "efficiency_pct": 90.8661413725768,
+          "rv_n": 9,
+          "rv_wait_min": 5.665633743483015,
+          "elapsed_s": 0.06001045599987265
+        },
+        "S3_opt_static": {
+          "angle": 102.0,
+          "n_cycles": 13,
+          "area_ha": 9.999803035,
+          "spray_km": 10.13034026288767,
+          "dead_km": 11.71385103132639,
+          "deadhead_km": 11.32112703388283,
+          "ferry_km": 0.3927239974435616,
+          "energy_total_wh": 10992.151136361166,
+          "energy_spray_wh": 6563.764817564661,
+          "energy_deadhead_wh": 4018.2208421014143,
+          "energy_ferry_wh": 410.16547669509185,
+          "energy_nonprod_wh": 4428.386318796506,
+          "efficiency_pct": 91.17485819158345,
+          "rv_n": 0,
+          "rv_wait_min": 0.0,
+          "elapsed_s": 1.4131545110012667
+        },
+        "S4_opt_dynamic": {
+          "angle": 113.0,
+          "n_cycles": 12,
+          "area_ha": 9.999803035,
+          "spray_km": 10.144215280791466,
+          "dead_km": 10.040766839659167,
+          "deadhead_km": 10.040766839659167,
+          "ferry_km": 0.0,
+          "energy_total_wh": 9937.264614273001,
+          "energy_spray_wh": 6352.039660272033,
+          "energy_deadhead_wh": 3585.224954000967,
+          "energy_ferry_wh": 0.0,
+          "energy_nonprod_wh": 3585.224954000967,
+          "efficiency_pct": 91.29973581236965,
+          "rv_n": 11,
+          "rv_wait_min": 0.0,
+          "elapsed_s": 2.1869063430003735
+        }
+      },
+      "effects_dead_km": {
+        "optimization_static_pct": 24.03764104515297,
+        "dynamic_heuristic_pct": 90.46010324351221,
+        "optimization_dynamic_pct": -582.5303280699047,
+        "combined_pct": 34.88731137041361,
+        "expected_sum_pct": -492.0702248263925,
+        "interaction_pct": 526.9575361968061
+      },
+      "effects_energy_wh": {
+        "optimization_static_pct": 31.136209171005824,
+        "dynamic_heuristic_pct": 68.79382999384701,
+        "optimization_dynamic_pct": -78.6575467774555,
+        "combined_pct": 44.24782222380493,
+        "expected_sum_pct": -9.863716783608481,
+        "interaction_pct": 54.11153900741341
+      }
+    }
+  ],
+  "failures": []
+}

@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { TRAJ, DRAW } from '../utils/colors.js'
 import { fieldToGeoJSON, obstacleToGeoJSON, safeZoneToGeoJSON, waypointsByType, xyToLngLat, fieldBounds,} from '../utils/geo.js'
 import { MODE } from '../utils/modes.js'
-import { EMPTY_FC, getCycleColor, formatDistanceMeters, getEdgeLabelGroups,getEdgeSegments, getMissionMarkers, getPreviewLinePoints, getTrajectoryOpacity, toLineFeatureCollection, toPointFeatureCollection} from '../utils/viewScene.js'
+import { EMPTY_FC, getCycleColor, getDrawColor, formatDistanceMeters, getEdgeLabelGroups,getEdgeSegments, getMissionMarkers, getPreviewLinePoints, getTrajectoryOpacity, toLineFeatureCollection, toPointFeatureCollection} from '../utils/viewScene.js'
 import ZoomControls from './ZoomControls.jsx'
 import VehicleOverlay from './VehicleOverlay.jsx'
 
@@ -106,8 +106,14 @@ export default function MapView({
         source: 'field',
         paint: {
           'fill-color': DRAW.field,
-          'fill-opacity': 0.08,
+          'fill-opacity': 0.12,
         },
+      })
+      map.addLayer({
+        id: 'field-border-halo',
+        type: 'line',
+        source: 'field',
+        paint: { 'line-color': '#000000', 'line-width': 6, 'line-opacity': 0.5 },
       })
       map.addLayer({
         id: 'field-border',
@@ -115,47 +121,83 @@ export default function MapView({
         source: 'field',
         paint: {
           'line-color': DRAW.field,
-          'line-width': 2,
-          'line-opacity': 0.9,
+          'line-width': 3,
+          'line-opacity': 1,
         },
       })
 
       map.addSource('sweep-trajectory', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'sweep-trajectory-halo',
+        type: 'line',
+        source: 'sweep-trajectory',
+        paint: { 'line-color': '#000000', 'line-width': 6, 'line-opacity': 0.4 },
+      })
       map.addLayer({
         id: 'sweep-trajectory',
         type: 'line',
         source: 'sweep-trajectory',
         paint: {
           'line-color': ['coalesce', ['get', 'color'], TRAJ.sweep],
-          'line-width': 2,
-          'line-opacity': 0.92,
+          'line-width': 3,
+          'line-opacity': 1,
         },
+      })
+      map.addLayer({
+        id: 'sweep-trajectory-hit',
+        type: 'line',
+        source: 'sweep-trajectory',
+        paint: { 'line-color': 'transparent', 'line-width': 14, 'line-opacity': 0 },
       })
 
       map.addSource('ferry-trajectory', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'ferry-trajectory-halo',
+        type: 'line',
+        source: 'ferry-trajectory',
+        paint: { 'line-color': '#000000', 'line-width': 5, 'line-opacity': 0.4 },
+      })
       map.addLayer({
         id: 'ferry-trajectory',
         type: 'line',
         source: 'ferry-trajectory',
         paint: {
           'line-color': TRAJ.ferry,
-          'line-width': 1.6,
-          'line-opacity': 0.85,
+          'line-width': 2.5,
+          'line-opacity': 1,
           'line-dasharray': [4, 3],
         },
       })
+      map.addLayer({
+        id: 'ferry-trajectory-hit',
+        type: 'line',
+        source: 'ferry-trajectory',
+        paint: { 'line-color': 'transparent', 'line-width': 14, 'line-opacity': 0 },
+      })
 
       map.addSource('deadhead-trajectory', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'deadhead-trajectory-halo',
+        type: 'line',
+        source: 'deadhead-trajectory',
+        paint: { 'line-color': '#000000', 'line-width': 5, 'line-opacity': 0.4 },
+      })
       map.addLayer({
         id: 'deadhead-trajectory',
         type: 'line',
         source: 'deadhead-trajectory',
         paint: {
           'line-color': ['coalesce', ['get', 'color'], TRAJ.deadhead],
-          'line-width': 1.6,
-          'line-opacity': 0.75,
-          'line-dasharray': [2, 2],
+          'line-width': 2.5,
+          'line-opacity': 0.9,
+          'line-dasharray': [3, 2],
         },
+      })
+      map.addLayer({
+        id: 'deadhead-trajectory-hit',
+        type: 'line',
+        source: 'deadhead-trajectory',
+        paint: { 'line-color': 'transparent', 'line-width': 14, 'line-opacity': 0 },
       })
 
       map.addSource('base-markers', { type: 'geojson', data: EMPTY_FC })
@@ -198,13 +240,19 @@ export default function MapView({
 
       map.addSource('draw-lines', { type: 'geojson', data: EMPTY_FC })
       map.addLayer({
+        id: 'draw-lines-halo',
+        type: 'line',
+        source: 'draw-lines',
+        paint: { 'line-color': '#000000', 'line-width': 5, 'line-opacity': 0.5 },
+      })
+      map.addLayer({
         id: 'draw-lines',
         type: 'line',
         source: 'draw-lines',
         paint: {
-          'line-color': '#ffffff',
-          'line-width': 1.5,
-          'line-opacity': 0.75,
+          'line-color': DRAW.field,
+          'line-width': 2.5,
+          'line-opacity': 1,
           'line-dasharray': [5, 3],
         },
       })
@@ -215,9 +263,9 @@ export default function MapView({
         type: 'circle',
         source: 'draw-dots',
         paint: {
-          'circle-radius': 4,
+          'circle-radius': 5,
           'circle-color': '#ffffff',
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 2.5,
           'circle-stroke-color': DRAW.field,
         },
       })
@@ -225,13 +273,19 @@ export default function MapView({
       // UGV route layers — committed route shown as orange dashed line + dots
       map.addSource('ugv-route', { type: 'geojson', data: EMPTY_FC })
       map.addLayer({
+        id: 'ugv-route-halo',
+        type: 'line',
+        source: 'ugv-route',
+        paint: { 'line-color': '#000000', 'line-width': 6, 'line-opacity': 0.5 },
+      })
+      map.addLayer({
         id: 'ugv-route',
         type: 'line',
         source: 'ugv-route',
         paint: {
           'line-color': UGV_COLOR,
-          'line-width': 2.5,
-          'line-opacity': 0.9,
+          'line-width': 3.5,
+          'line-opacity': 1,
           'line-dasharray': [6, 3],
         },
       })
@@ -242,9 +296,9 @@ export default function MapView({
         type: 'circle',
         source: 'ugv-waypoints',
         paint: {
-          'circle-radius': 5,
+          'circle-radius': 6,
           'circle-color': UGV_COLOR,
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 2.5,
           'circle-stroke-color': '#ffffff',
         },
       })
@@ -255,13 +309,19 @@ export default function MapView({
         id: 'obstacle-fill',
         type: 'fill',
         source: 'obstacles',
-        paint: { 'fill-color': DRAW.obstacle, 'fill-opacity': 0.15 },
+        paint: { 'fill-color': DRAW.obstacle, 'fill-opacity': 0.2 },
+      })
+      map.addLayer({
+        id: 'obstacle-border-halo',
+        type: 'line',
+        source: 'obstacles',
+        paint: { 'line-color': '#000000', 'line-width': 5, 'line-opacity': 0.5 },
       })
       map.addLayer({
         id: 'obstacle-border',
         type: 'line',
         source: 'obstacles',
-        paint: { 'line-color': DRAW.obstacle, 'line-width': 1.5, 'line-opacity': 0.9 },
+        paint: { 'line-color': DRAW.obstacle, 'line-width': 2.5, 'line-opacity': 1 },
       })
 
       // Safe zone boundary — dashed red outline showing spray margin
@@ -380,16 +440,29 @@ export default function MapView({
   useEffect(() => {
     if (!ready) return
     const map = mapRef.current
-    const trajLayers = ['sweep-trajectory', 'deadhead-trajectory']
+    const trajLayers = ['sweep-trajectory-hit', 'ferry-trajectory-hit', 'deadhead-trajectory-hit']
+    let leaveTimer = null
+    const popup = new maplibregl.Popup({
+      closeButton: false, closeOnClick: false, offset: 10,
+      className: 'cycle-popup',
+    })
 
     const onEnter = (e) => {
+      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null }
       const ci = e.features?.[0]?.properties?.cycleIndex ?? null
       setHoveredCycle(ci)
       map.getCanvas().style.cursor = 'pointer'
+      if (ci !== null) {
+        popup.setLngLat(e.lngLat).setHTML(`Cycle ${ci + 1}`).addTo(map)
+      }
     }
     const onLeave = () => {
-      setHoveredCycle(null)
-      map.getCanvas().style.cursor = ''
+      if (leaveTimer) clearTimeout(leaveTimer)
+      leaveTimer = setTimeout(() => {
+        setHoveredCycle(null)
+        map.getCanvas().style.cursor = ''
+        popup.remove()
+      }, 80)
     }
     const onClickLayer = (e) => {
       const ci = e.features?.[0]?.properties?.cycleIndex ?? null
@@ -406,6 +479,8 @@ export default function MapView({
     map.on('click', onClickMap)
 
     return () => {
+      if (leaveTimer) clearTimeout(leaveTimer)
+      popup.remove()
       for (const layer of trajLayers) {
         map.off('mousemove', layer, onEnter)
         map.off('mouseleave', layer, onLeave)
@@ -449,8 +524,11 @@ export default function MapView({
       : base
 
     map.setPaintProperty('sweep-trajectory', 'line-opacity', cycleExpr(sweepOpacity))
-    map.setPaintProperty('ferry-trajectory', 'line-opacity', ferryOpacity)
+    map.setPaintProperty('sweep-trajectory-halo', 'line-opacity', cycleExpr(sweepOpacity * 0.4))
+    map.setPaintProperty('ferry-trajectory', 'line-opacity', cycleExpr(ferryOpacity))
+    map.setPaintProperty('ferry-trajectory-halo', 'line-opacity', cycleExpr(ferryOpacity * 0.4))
     map.setPaintProperty('deadhead-trajectory', 'line-opacity', cycleExpr(deadheadOpacity))
+    map.setPaintProperty('deadhead-trajectory-halo', 'line-opacity', cycleExpr(deadheadOpacity * 0.4))
   }, [ready, highlight, hoveredCycle, selectedCycle])
 
   useEffect(() => {
@@ -482,6 +560,13 @@ export default function MapView({
       map.getSource('draw-dots').setData(EMPTY_FC)
       return
     }
+
+    // Update draw color based on current mode
+    const drawColor = getDrawColor(drawMode)
+    map.setPaintProperty('draw-lines', 'line-color', drawColor)
+    map.setPaintProperty('draw-lines-halo', 'line-color', '#000000')
+    map.setPaintProperty('draw-dots', 'circle-stroke-color', drawColor)
+    map.setPaintProperty('draw-fill', 'fill-color', drawColor)
 
     // Normal polygon / obstacle drawing preview
     const previewLinePoints = getPreviewLinePoints(points)

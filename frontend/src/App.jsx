@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { C } from './utils/colors.js'
+import { polylineLength } from './utils/geo.js'
 import MapView from './components/MapView.jsx'
 import PolygonCanvas from './components/PolygonCanvas.jsx'
 import MissionPanel from './components/MissionPanel.jsx'
@@ -52,6 +53,11 @@ export default function App() {
     handleToggleDrawUgvRoute,
     handleLoadField,
     handleClear,
+    setBasePoint,
+    setUgvRoute,
+    loadedMeta,
+    fileHandle,
+    buildFieldDoc,
   } = useFieldEditor(resetMission)
 
   const {
@@ -72,13 +78,7 @@ export default function App() {
 
   const drawingLengthM = useMemo(() => {
     if (mode !== MODE.DRAW_UGV_ROUTE || drawingPoints.length < 2) return 0
-    let total = 0
-    for (let i = 0; i < drawingPoints.length - 1; i++) {
-      const [x1, y1] = drawingPoints[i]
-      const [x2, y2] = drawingPoints[i + 1]
-      total += Math.hypot(x2 - x1, y2 - y1)
-    }
-    return total
+    return polylineLength(drawingPoints)
   }, [mode, drawingPoints])
 
   return (
@@ -114,6 +114,12 @@ export default function App() {
               onToggleDrawUgvRoute={handleToggleDrawUgvRoute}
               onLoadField={handleLoadField}
               onClear={handleClear}
+              fileHandle={fileHandle}
+              loadedMetaName={loadedMeta?.name ?? null}
+              buildFieldDoc={buildFieldDoc}
+              setBasePoint={setBasePoint}
+              setUgvRoute={setUgvRoute}
+              resetMission={resetMission}
               onMissionReady={handleMissionReady}
               onStartSim={() => setSimEnabled(true)}
               onStopSim={() => { disconnect(); setSimEnabled(false) }}

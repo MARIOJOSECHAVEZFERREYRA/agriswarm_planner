@@ -1,6 +1,6 @@
 {
     "name": "kidney_shape",
-    "description": "Organic kidney/bean-shaped field (≤500m) with curved appearance and obstacles",
+    "description": "Organic kidney/bean-shaped field (\u2264500m) with curved appearance and obstacles",
     "boundary": [
         [
             100,
@@ -135,6 +135,8 @@
             ]
         ]
     ],
-    "expected_cells_min": 1,
-    "min_coverage": 0.75
+    "base_point": [
+        47.0,
+        57.0
+    ]
 }

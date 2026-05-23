@@ -1,9 +1,22 @@
 // Reference origin for flat x/y (meters) → WGS84 (lng/lat) conversion.
-// Adjust REF_LAT/REF_LNG to match the real location of your fields.
-const REF_LAT = -17.783327
-const REF_LNG = -63.182140
+// Mutable: setGeoOrigin() updates the reference to the field centroid
+// so all flat coordinates stay near (0,0).
+let REF_LAT = -17.783327
+let REF_LNG = -63.182140
 const LAT_PER_METER = 1 / 111_000
-const LNG_PER_METER = 1 / (111_000 * Math.cos((REF_LAT * Math.PI) / 180))
+let LNG_PER_METER = 1 / (111_000 * Math.cos((REF_LAT * Math.PI) / 180))
+
+/** Move the reference origin. Recalculates lng-per-meter for new latitude. */
+export function setGeoOrigin(lng, lat) {
+  REF_LNG = lng
+  REF_LAT = lat
+  LNG_PER_METER = 1 / (111_000 * Math.cos((lat * Math.PI) / 180))
+}
+
+/** Current reference as [lng, lat]. */
+export function getGeoOrigin() {
+  return [REF_LNG, REF_LAT]
+}
 
 /** Convert flat [x, y] (meters) to GeoJSON [lng, lat]. */
 export function xyToLngLat(x, y) {
@@ -39,6 +52,20 @@ export function waypointsToGeoJSON(waypoints) {
     type: 'FeatureCollection',
     features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: {} }],
   }
+}
+
+/** Total length of a polyline given as [[x,y], ...]. */
+export function polylineLength(points) {
+  let total = 0
+  for (let i = 0; i < points.length - 1; i++) {
+    total += Math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1])
+  }
+  return total
+}
+
+/** Format meters for display: km if >= 1000, otherwise m. */
+export function formatMeters(m) {
+  return m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(0)} m`
 }
 
 /** Convert WGS84 [lng, lat] back to flat [x, y] meters. */

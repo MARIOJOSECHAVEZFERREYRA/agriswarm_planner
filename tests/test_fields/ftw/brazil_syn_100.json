@@ -1,0 +1,48 @@
+{
+  "name": "brazil_syn_100",
+  "description": "synthetic Brazil field (aspect 2.2:1, 7.2 ha)",
+  "boundary": [
+    [
+      168.57,
+      0.0
+    ],
+    [
+      208.45,
+      389.02
+    ],
+    [
+      41.19,
+      408.51
+    ],
+    [
+      0.0,
+      13.26
+    ]
+  ],
+  "obstacles": [],
+  "base_point": [
+    -3.0,
+    -3.0
+  ],
+  "ugv_polyline": [
+    [
+      -5.0,
+      -5.0
+    ],
+    [
+      -5.0,
+      413.51
+    ]
+  ],
+  "ugv_speed": 2.0,
+  "ugv_t_service": 300.0,
+  "_utm_origin": [
+    413941.56,
+    8633474.55
+  ],
+  "_origin_lnglat": [
+    -45.7915929,
+    -12.360325
+  ],
+  "_utm_epsg": 32723
+}

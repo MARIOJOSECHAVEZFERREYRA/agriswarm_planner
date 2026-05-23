@@ -1,0 +1,1452 @@
+{
+  "mission_name": "Mission_test_obstacle_cross",
+  "drone": "DJI Agras T30",
+  "strategy": "grid",
+  "best_angle_deg": 0,
+  "n_cycles": 16,
+  "total_distance_m": 15959.085168857257,
+  "coverage_area_m2": 132820.49000000002,
+  "spray_width_m": 9,
+  "overrides": {
+    "swath": 9,
+    "speed": 5,
+    "app_rate": 10,
+    "margin": 4.5
+  },
+  "field": {
+    "boundary": [
+      [
+        0,
+        0
+      ],
+      [
+        500,
+        0
+      ],
+      [
+        500,
+        423.1
+      ],
+      [
+        0,
+        423.1
+      ]
+    ],
+    "obstacles": [
+      [
+        [
+          7.7,
+          7.7
+        ],
+        [
+          115.4,
+          7.7
+        ],
+        [
+          115.4,
+          61.5
+        ],
+        [
+          7.7,
+          61.5
+        ]
+      ],
+      [
+        [
+          384.6,
+          3.8
+        ],
+        [
+          492.3,
+          3.8
+        ],
+        [
+          492.3,
+          69.2
+        ],
+        [
+          384.6,
+          69.2
+        ]
+      ],
+      [
+        [
+          3.8,
+          153.8
+        ],
+        [
+          76.9,
+          153.8
+        ],
+        [
+          76.9,
+          269.2
+        ],
+        [
+          3.8,
+          269.2
+        ]
+      ],
+      [
+        [
+          423.1,
+          115.4
+        ],
+        [
+          496.2,
+          115.4
+        ],
+        [
+          496.2,
+          307.7
+        ],
+        [
+          423.1,
+          307.7
+        ]
+      ],
+      [
+        [
+          7.7,
+          361.5
+        ],
+        [
+          138.5,
+          361.5
+        ],
+        [
+          138.5,
+          419.2
+        ],
+        [
+          7.7,
+          419.2
+        ]
+      ],
+      [
+        [
+          346.2,
+          353.8
+        ],
+        [
+          492.3,
+          353.8
+        ],
+        [
+          492.3,
+          419.2
+        ],
+        [
+          346.2,
+          419.2
+        ]
+      ],
+      [
+        [
+          192.3,
+          11.5
+        ],
+        [
+          307.7,
+          11.5
+        ],
+        [
+          307.7,
+          46.2
+        ],
+        [
+          192.3,
+          46.2
+        ]
+      ],
+      [
+        [
+          153.8,
+          376.9
+        ],
+        [
+          269.2,
+          376.9
+        ],
+        [
+          269.2,
+          419.2
+        ],
+        [
+          153.8,
+          419.2
+        ]
+      ]
+    ],
+    "ugvRoute": [
+      [
+        536.8651123046875,
+        5.70611572265625
+      ],
+      [
+        519.6168823242188,
+        405.1385040283203
+      ]
+    ]
+  },
+  "metrics": {
+    "area_ha": 15.023138999999999,
+    "flight_time_min": 81.32353243475843,
+    "service_time_min": 30,
+    "total_op_time_min": 111.47096249779426,
+    "productivity_ha_hr": 8.086306243366618,
+    "real_dosage_l_ha": 8.772088176778505,
+    "spray_dist_km": 14.642700000000003,
+    "ferry_dist_km": 0.8645071221960183,
+    "dead_dist_km": 13.659499875494594,
+    "deadhead_dist_km": 12.794992753298574,
+    "efficiency_ratio": 87.72088176778503,
+    "rv_n_rendezvous": 15,
+    "rv_wait_min": 0.14743006303582054,
+    "_safe_polygon": [
+      [
+        380.1,
+        73.7
+      ],
+      [
+        380.1,
+        4.5
+      ],
+      [
+        119.9,
+        4.5
+      ],
+      [
+        119.9,
+        66
+      ],
+      [
+        4.5,
+        66
+      ],
+      [
+        4.5,
+        149.3
+      ],
+      [
+        81.4,
+        149.3
+      ],
+      [
+        81.4,
+        273.7
+      ],
+      [
+        4.5,
+        273.7
+      ],
+      [
+        4.5,
+        357
+      ],
+      [
+        143,
+        357
+      ],
+      [
+        143,
+        418.6
+      ],
+      [
+        149.3,
+        418.6
+      ],
+      [
+        149.3,
+        372.4
+      ],
+      [
+        273.7,
+        372.4
+      ],
+      [
+        273.7,
+        418.6
+      ],
+      [
+        341.7,
+        418.6
+      ],
+      [
+        341.7,
+        349.3
+      ],
+      [
+        495.5,
+        349.3
+      ],
+      [
+        495.5,
+        312.2
+      ],
+      [
+        418.6,
+        312.2
+      ],
+      [
+        418.6,
+        110.9
+      ],
+      [
+        495.5,
+        110.9
+      ],
+      [
+        495.5,
+        73.7
+      ],
+      [
+        380.1,
+        73.7
+      ]
+    ]
+  },
+  "waypoints": [
+    {
+      "sequence": 0,
+      "x": 536.8651123046875,
+      "y": 5.70611572265625,
+      "type": "deadhead",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 1,
+      "x": 380.1,
+      "y": 45,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 2,
+      "x": 312.2,
+      "y": 45,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 3,
+      "x": 312.2,
+      "y": 36,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 4,
+      "x": 380.1,
+      "y": 36,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 5,
+      "x": 380.1,
+      "y": 27,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 6,
+      "x": 312.2,
+      "y": 27,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 7,
+      "x": 312.2,
+      "y": 18,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 8,
+      "x": 380.1,
+      "y": 18,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 9,
+      "x": 380.1,
+      "y": 9,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 10,
+      "x": 312.2,
+      "y": 9,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 11,
+      "x": 312.2,
+      "y": 6.999999999999998,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 12,
+      "x": 187.8,
+      "y": 6.999999999999998,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 13,
+      "x": 119.9,
+      "y": 9,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 14,
+      "x": 187.8,
+      "y": 9,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 15,
+      "x": 187.8,
+      "y": 18,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 16,
+      "x": 119.9,
+      "y": 18,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 17,
+      "x": 119.9,
+      "y": 27,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 18,
+      "x": 187.8,
+      "y": 27,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 19,
+      "x": 187.8,
+      "y": 36,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 20,
+      "x": 119.9,
+      "y": 36,
+      "type": "ferry",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 21,
+      "x": 119.9,
+      "y": 45,
+      "type": "sweep",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 22,
+      "x": 187.8,
+      "y": 45,
+      "type": "deadhead",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 23,
+      "x": 187.8,
+      "y": 50.7,
+      "type": "deadhead",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 24,
+      "x": 534.2778778076172,
+      "y": 65.62097396850587,
+      "type": "base",
+      "cycle_index": 0
+    },
+    {
+      "sequence": 25,
+      "x": 534.2778778076172,
+      "y": 65.62097396850587,
+      "type": "deadhead",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 26,
+      "x": 187.8,
+      "y": 50.7,
+      "type": "deadhead",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 27,
+      "x": 187.8,
+      "y": 45,
+      "type": "deadhead",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 28,
+      "x": 380.1,
+      "y": 54,
+      "type": "sweep",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 29,
+      "x": 119.9,
+      "y": 54,
+      "type": "ferry",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 30,
+      "x": 119.9,
+      "y": 63,
+      "type": "sweep",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 31,
+      "x": 380.1,
+      "y": 63,
+      "type": "ferry",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 32,
+      "x": 380.1,
+      "y": 72,
+      "type": "sweep",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 33,
+      "x": 4.5,
+      "y": 72,
+      "type": "deadhead",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 34,
+      "x": 533.4154663085938,
+      "y": 85.59259338378907,
+      "type": "base",
+      "cycle_index": 1
+    },
+    {
+      "sequence": 35,
+      "x": 533.4154663085938,
+      "y": 85.59259338378907,
+      "type": "deadhead",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 36,
+      "x": 4.5,
+      "y": 72,
+      "type": "deadhead",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 37,
+      "x": 4.5,
+      "y": 81,
+      "type": "sweep",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 38,
+      "x": 495.5,
+      "y": 81,
+      "type": "ferry",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 39,
+      "x": 495.5,
+      "y": 90,
+      "type": "sweep",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 40,
+      "x": 4.5,
+      "y": 90,
+      "type": "deadhead",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 41,
+      "x": 532.5530548095703,
+      "y": 105.56421279907227,
+      "type": "base",
+      "cycle_index": 2
+    },
+    {
+      "sequence": 42,
+      "x": 532.5530548095703,
+      "y": 105.56421279907227,
+      "type": "deadhead",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 43,
+      "x": 4.5,
+      "y": 90,
+      "type": "deadhead",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 44,
+      "x": 4.5,
+      "y": 99,
+      "type": "sweep",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 45,
+      "x": 495.5,
+      "y": 99,
+      "type": "ferry",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 46,
+      "x": 495.5,
+      "y": 108,
+      "type": "sweep",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 47,
+      "x": 4.5,
+      "y": 108,
+      "type": "deadhead",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 48,
+      "x": 532.5530548095703,
+      "y": 105.56421279907227,
+      "type": "base",
+      "cycle_index": 3
+    },
+    {
+      "sequence": 49,
+      "x": 532.5530548095703,
+      "y": 105.56421279907227,
+      "type": "deadhead",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 50,
+      "x": 4.5,
+      "y": 108,
+      "type": "deadhead",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 51,
+      "x": 4.5,
+      "y": 117,
+      "type": "sweep",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 52,
+      "x": 418.6,
+      "y": 117,
+      "type": "ferry",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 53,
+      "x": 418.6,
+      "y": 126,
+      "type": "sweep",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 54,
+      "x": 4.5,
+      "y": 126,
+      "type": "deadhead",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 55,
+      "x": 531.6906433105469,
+      "y": 125.53583221435547,
+      "type": "base",
+      "cycle_index": 4
+    },
+    {
+      "sequence": 56,
+      "x": 531.6906433105469,
+      "y": 125.53583221435547,
+      "type": "deadhead",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 57,
+      "x": 4.5,
+      "y": 126,
+      "type": "deadhead",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 58,
+      "x": 4.5,
+      "y": 135,
+      "type": "sweep",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 59,
+      "x": 418.6,
+      "y": 135,
+      "type": "ferry",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 60,
+      "x": 418.6,
+      "y": 144,
+      "type": "sweep",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 61,
+      "x": 4.5,
+      "y": 144,
+      "type": "deadhead",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 62,
+      "x": 530.8282318115234,
+      "y": 145.50745162963867,
+      "type": "base",
+      "cycle_index": 5
+    },
+    {
+      "sequence": 63,
+      "x": 530.8282318115234,
+      "y": 145.50745162963867,
+      "type": "deadhead",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 64,
+      "x": 4.5,
+      "y": 144,
+      "type": "deadhead",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 65,
+      "x": 81.4,
+      "y": 153,
+      "type": "sweep",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 66,
+      "x": 418.6,
+      "y": 153,
+      "type": "ferry",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 67,
+      "x": 418.6,
+      "y": 162,
+      "type": "sweep",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 68,
+      "x": 81.4,
+      "y": 162,
+      "type": "ferry",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 69,
+      "x": 81.4,
+      "y": 171,
+      "type": "sweep",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 70,
+      "x": 418.6,
+      "y": 171,
+      "type": "deadhead",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 71,
+      "x": 529.1034088134766,
+      "y": 185.4506904602051,
+      "type": "base",
+      "cycle_index": 6
+    },
+    {
+      "sequence": 72,
+      "x": 529.1034088134766,
+      "y": 185.4506904602051,
+      "type": "deadhead",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 73,
+      "x": 418.6,
+      "y": 171,
+      "type": "deadhead",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 74,
+      "x": 418.6,
+      "y": 180,
+      "type": "sweep",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 75,
+      "x": 81.4,
+      "y": 180,
+      "type": "ferry",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 76,
+      "x": 81.4,
+      "y": 189,
+      "type": "sweep",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 77,
+      "x": 418.6,
+      "y": 189,
+      "type": "ferry",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 78,
+      "x": 418.6,
+      "y": 198,
+      "type": "sweep",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 79,
+      "x": 81.4,
+      "y": 198,
+      "type": "ferry",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 80,
+      "x": 81.4,
+      "y": 207,
+      "type": "sweep",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 81,
+      "x": 418.6,
+      "y": 207,
+      "type": "deadhead",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 82,
+      "x": 528.2409973144531,
+      "y": 205.42230987548834,
+      "type": "base",
+      "cycle_index": 7
+    },
+    {
+      "sequence": 83,
+      "x": 528.2409973144531,
+      "y": 205.42230987548834,
+      "type": "deadhead",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 84,
+      "x": 418.6,
+      "y": 207,
+      "type": "deadhead",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 85,
+      "x": 418.6,
+      "y": 216,
+      "type": "sweep",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 86,
+      "x": 81.4,
+      "y": 216,
+      "type": "ferry",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 87,
+      "x": 81.4,
+      "y": 225,
+      "type": "sweep",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 88,
+      "x": 418.6,
+      "y": 225,
+      "type": "ferry",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 89,
+      "x": 418.6,
+      "y": 234,
+      "type": "sweep",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 90,
+      "x": 81.4,
+      "y": 234,
+      "type": "ferry",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 91,
+      "x": 81.4,
+      "y": 243,
+      "type": "sweep",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 92,
+      "x": 418.6,
+      "y": 243,
+      "type": "deadhead",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 93,
+      "x": 527.3785858154297,
+      "y": 225.3939292907715,
+      "type": "base",
+      "cycle_index": 8
+    },
+    {
+      "sequence": 94,
+      "x": 527.3785858154297,
+      "y": 225.3939292907715,
+      "type": "deadhead",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 95,
+      "x": 418.6,
+      "y": 243,
+      "type": "deadhead",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 96,
+      "x": 418.6,
+      "y": 252,
+      "type": "sweep",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 97,
+      "x": 81.4,
+      "y": 252,
+      "type": "ferry",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 98,
+      "x": 81.4,
+      "y": 261,
+      "type": "sweep",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 99,
+      "x": 418.6,
+      "y": 261,
+      "type": "ferry",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 100,
+      "x": 418.6,
+      "y": 270,
+      "type": "sweep",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 101,
+      "x": 81.4,
+      "y": 270,
+      "type": "deadhead",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 102,
+      "x": 524.7913513183594,
+      "y": 285.30878753662114,
+      "type": "base",
+      "cycle_index": 9
+    },
+    {
+      "sequence": 103,
+      "x": 524.7913513183594,
+      "y": 285.30878753662114,
+      "type": "deadhead",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 104,
+      "x": 81.4,
+      "y": 270,
+      "type": "deadhead",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 105,
+      "x": 4.5,
+      "y": 279,
+      "type": "sweep",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 106,
+      "x": 418.6,
+      "y": 279,
+      "type": "ferry",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 107,
+      "x": 418.6,
+      "y": 288,
+      "type": "sweep",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 108,
+      "x": 4.5,
+      "y": 288,
+      "type": "deadhead",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 109,
+      "x": 523.9289398193359,
+      "y": 305.28040695190435,
+      "type": "base",
+      "cycle_index": 10
+    },
+    {
+      "sequence": 110,
+      "x": 523.9289398193359,
+      "y": 305.28040695190435,
+      "type": "deadhead",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 111,
+      "x": 4.5,
+      "y": 288,
+      "type": "deadhead",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 112,
+      "x": 4.5,
+      "y": 297,
+      "type": "sweep",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 113,
+      "x": 418.6,
+      "y": 297,
+      "type": "ferry",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 114,
+      "x": 418.6,
+      "y": 306,
+      "type": "sweep",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 115,
+      "x": 4.5,
+      "y": 306,
+      "type": "deadhead",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 116,
+      "x": 523.0665283203125,
+      "y": 325.2520263671875,
+      "type": "base",
+      "cycle_index": 11
+    },
+    {
+      "sequence": 117,
+      "x": 523.0665283203125,
+      "y": 325.2520263671875,
+      "type": "deadhead",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 118,
+      "x": 4.5,
+      "y": 306,
+      "type": "deadhead",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 119,
+      "x": 4.5,
+      "y": 315,
+      "type": "sweep",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 120,
+      "x": 495.5,
+      "y": 315,
+      "type": "ferry",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 121,
+      "x": 495.5,
+      "y": 324,
+      "type": "sweep",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 122,
+      "x": 4.5,
+      "y": 324,
+      "type": "deadhead",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 123,
+      "x": 523.0665283203125,
+      "y": 325.2520263671875,
+      "type": "base",
+      "cycle_index": 12
+    },
+    {
+      "sequence": 124,
+      "x": 523.0665283203125,
+      "y": 325.2520263671875,
+      "type": "deadhead",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 125,
+      "x": 4.5,
+      "y": 324,
+      "type": "deadhead",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 126,
+      "x": 4.5,
+      "y": 333,
+      "type": "sweep",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 127,
+      "x": 495.5,
+      "y": 333,
+      "type": "ferry",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 128,
+      "x": 495.5,
+      "y": 342,
+      "type": "sweep",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 129,
+      "x": 4.5,
+      "y": 342,
+      "type": "deadhead",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 130,
+      "x": 523.0665283203125,
+      "y": 325.2520263671875,
+      "type": "base",
+      "cycle_index": 13
+    },
+    {
+      "sequence": 131,
+      "x": 523.0665283203125,
+      "y": 325.2520263671875,
+      "type": "deadhead",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 132,
+      "x": 4.5,
+      "y": 342,
+      "type": "deadhead",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 133,
+      "x": 4.5,
+      "y": 351,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 134,
+      "x": 341.7,
+      "y": 351,
+      "type": "ferry",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 135,
+      "x": 341.7,
+      "y": 360,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 136,
+      "x": 143,
+      "y": 360,
+      "type": "ferry",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 137,
+      "x": 143,
+      "y": 369,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 138,
+      "x": 341.7,
+      "y": 369,
+      "type": "ferry",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 139,
+      "x": 149.3,
+      "y": 378,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 140,
+      "x": 143,
+      "y": 378,
+      "type": "ferry",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 141,
+      "x": 143,
+      "y": 387,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 142,
+      "x": 149.3,
+      "y": 387,
+      "type": "ferry",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 143,
+      "x": 149.3,
+      "y": 396,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 144,
+      "x": 143,
+      "y": 396,
+      "type": "ferry",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 145,
+      "x": 143,
+      "y": 405,
+      "type": "sweep",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 146,
+      "x": 149.3,
+      "y": 405,
+      "type": "deadhead",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 147,
+      "x": 522.2041168212891,
+      "y": 345.22364578247067,
+      "type": "base",
+      "cycle_index": 14
+    },
+    {
+      "sequence": 148,
+      "x": 522.2041168212891,
+      "y": 345.22364578247067,
+      "type": "deadhead",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 149,
+      "x": 149.3,
+      "y": 405,
+      "type": "ferry",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 150,
+      "x": 149.3,
+      "y": 414,
+      "type": "sweep",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 151,
+      "x": 143,
+      "y": 414,
+      "type": "ferry",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 152,
+      "x": 273.7,
+      "y": 378,
+      "type": "sweep",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 153,
+      "x": 341.7,
+      "y": 378,
+      "type": "ferry",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 154,
+      "x": 341.7,
+      "y": 387,
+      "type": "sweep",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 155,
+      "x": 273.7,
+      "y": 387,
+      "type": "ferry",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 156,
+      "x": 273.7,
+      "y": 396,
+      "type": "sweep",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 157,
+      "x": 341.7,
+      "y": 396,
+      "type": "ferry",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 158,
+      "x": 341.7,
+      "y": 405,
+      "type": "sweep",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 159,
+      "x": 273.7,
+      "y": 405,
+      "type": "ferry",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 160,
+      "x": 273.7,
+      "y": 414,
+      "type": "sweep",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 161,
+      "x": 341.7,
+      "y": 414,
+      "type": "deadhead",
+      "cycle_index": 15
+    },
+    {
+      "sequence": 162,
+      "x": 522.2041168212891,
+      "y": 345.22364578247067,
+      "type": "base",
+      "cycle_index": 15
+    }
+  ]
+}

@@ -20,14 +20,14 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, TextBox
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, '..', 'backend'))
+sys.path.insert(0, os.path.join(ROOT, '..'))
 
-from algorithms.coverage.decomposition import ConcaveDecomposer
-from algorithms.coverage.path_planner import BoustrophedonPlanner
-from algorithms.coverage.margin import MarginReducer
-from algorithms.coverage.path_assembler import PathAssembler
-from algorithms.energy.segmentation import MissionSegmenter
-from algorithms.energy.energy_model import DroneEnergyModel
+from backend.algorithms.coverage.decomposition import ConcaveDecomposer
+from backend.algorithms.coverage.path_planner import BoustrophedonPlanner
+from backend.algorithms.coverage.margin import MarginReducer
+from backend.algorithms.coverage.path_assembler import PathAssembler
+from backend.algorithms.energy.segmentation import MissionSegmenter
+from backend.algorithms.energy.energy_model import DroneEnergyModel
 from shapely import affinity
 from shapely.geometry import Point
 from visual_base import (
@@ -484,7 +484,7 @@ class PipelineVisualizer:
                         continue
                     xs, ys = zip(*pts)
                     if stype == 'sweep' and self.show['paths']:
-                        ax.plot(xs, ys, color='#27AE60', lw=1.3, alpha=0.9)
+                        ax.plot(xs, ys, color='#27AE60', lw=1.0, alpha=0.45)
                     elif stype == 'ferry' and self.show['ferries']:
                         ax.plot(xs, ys, color=C_FERRY, lw=1.0, alpha=0.55,
                                 ls='--')

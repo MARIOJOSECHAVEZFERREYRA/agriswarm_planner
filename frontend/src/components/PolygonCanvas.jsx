@@ -263,6 +263,7 @@ export default function PolygonCanvas({
   const dragRef = useRef(null)
   const movedRef = useRef(false)
   const initRef = useRef(false)
+  const hoverLeaveTimer = useRef(null)
 
   useEffect(() => () => clearTimeout(hoverLeaveTimer.current), [])
 
@@ -276,12 +277,59 @@ export default function PolygonCanvas({
   const [pixelWidth, setPixelWidth] = useState(800)
   const [hoveredCycle, setHoveredCycle] = useState(null)
   const [selectedCycle, setSelectedCycle] = useState(null)
-  const hoverLeaveTimer = useRef(null)
 
   useEffect(() => {
     setSelectedCycle(null)
     setHoveredCycle(null)
   }, [highlight])
+
+  // Auto-fit viewport when a new field appears (e.g. drawn on Map)
+  const prevCoordsKey = useRef(null)
+  useEffect(() => {
+    const coords = field?.coordinates
+    if (!coords || coords.length < 2) { prevCoordsKey.current = null; return }
+
+    const key = coords.map(p => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(';')
+    if (prevCoordsKey.current === key) return
+    prevCoordsKey.current = key
+
+    const xs = coords.map(p => OX + p[0])
+    const ys = coords.map(p => OY_SVG - p[1])
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    const dataW = (maxX - minX) || 100
+    const dataH = (maxY - minY) || 100
+    const pad = 0.2
+
+    // The viewBox aspect ratio MUST match the container exactly because
+    // preserveAspectRatio="none".  Fit the data inside, then expand
+    // whichever axis is too small so the ratio locks to the container.
+    const rect = wrapRef.current?.getBoundingClientRect()
+    const cAspect = (rect && rect.width > 0 && rect.height > 0)
+      ? rect.height / rect.width
+      : 0.7
+
+    let fitW = dataW * (1 + 2 * pad)
+    let fitH = dataH * (1 + 2 * pad)
+
+    // Enforce container aspect: expand the smaller axis
+    if (fitH / fitW > cAspect) {
+      // Data taller than container ratio → widen viewBox
+      fitW = fitH / cAspect
+    } else {
+      // Data wider than container ratio → heighten viewBox
+      fitH = fitW * cAspect
+    }
+
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    setViewBox({
+      x: cx - fitW / 2,
+      y: cy - fitH / 2,
+      w: fitW,
+      h: fitH,
+    })
+  }, [field])
 
   const safeViewBox = safe(viewBox)
   const zoom = W / safeViewBox.w
@@ -493,6 +541,10 @@ export default function PolygonCanvas({
     hoverLeaveTimer.current = setTimeout(() => setHoveredCycle(null), 60)
   }, [])
 
+  const handleCycleToggle = useCallback((cycleIndex) => {
+    setSelectedCycle(current => current === cycleIndex ? null : cycleIndex)
+  }, [])
+
   const gridLines = buildGridLines(safeViewBox, px)
   const gridLabels = buildGridLabels(safeViewBox, px, zoom)
 
@@ -510,7 +562,7 @@ export default function PolygonCanvas({
     : 'default'
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', background: '#ffffff' }}>
       <svg
         ref={svgRef}
         viewBox={`${safeViewBox.x} ${safeViewBox.y} ${safeViewBox.w} ${safeViewBox.h}`}
@@ -614,7 +666,7 @@ export default function PolygonCanvas({
             drawMode={drawMode}
             onCycleEnter={handleCycleEnter}
             onCycleLeave={handleCycleLeave}
-            onCycleToggle={cycleIndex => setSelectedCycle(current => current === cycleIndex ? null : cycleIndex)}
+            onCycleToggle={handleCycleToggle}
           />
         ))}
 
@@ -644,25 +696,9 @@ export default function PolygonCanvas({
             drawMode={drawMode}
             onCycleEnter={handleCycleEnter}
             onCycleLeave={handleCycleLeave}
-            onCycleToggle={cycleIndex => setSelectedCycle(current => current === cycleIndex ? null : cycleIndex)}
+            onCycleToggle={handleCycleToggle}
           />
         ))}
-
-        {getMissionMarkers(waypoints, basePoints).map(marker => {
-          const [sx, sy] = mToSVG(marker.point.x, marker.point.y)
-
-          return (
-            <MissionMarkerSvg
-              key={marker.key}
-              sx={sx}
-              sy={sy}
-              r={6 * px}
-              strokeWidth={1.5 * px}
-              label={marker.label}
-              color={marker.color}
-            />
-          )
-        })}
 
         {basePoint && (() => {
           const [sx, sy] = mToSVG(basePoint[0], basePoint[1])
@@ -748,6 +784,22 @@ export default function PolygonCanvas({
             })}
           </>
         )}
+
+        {getMissionMarkers(waypoints, basePoints).map(marker => {
+          const [sx, sy] = mToSVG(marker.point.x, marker.point.y)
+
+          return (
+            <MissionMarkerSvg
+              key={marker.key}
+              sx={sx}
+              sy={sy}
+              r={6 * px}
+              strokeWidth={1.5 * px}
+              label={marker.label}
+              color={marker.color}
+            />
+          )
+        })}
 
         <VehicleOverlay
           renderer="svg"

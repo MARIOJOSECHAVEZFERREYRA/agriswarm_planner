@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { lngLatToXy, wouldSelfIntersect, polygonArea, pointInPolygon, isPolygonInside, polygonsOverlap } from '../utils/geo.js'
+import { lngLatToXy, xyToLngLat, setGeoOrigin, wouldSelfIntersect, polygonArea, pointInPolygon, isPolygonInside, polygonsOverlap } from '../utils/geo.js'
 import { MODE } from '../utils/modes.js'
 
 const MIN_FIELD_AREA_M2    = 100  // 10×10 m — below this the field is degenerate for planning
@@ -22,6 +22,13 @@ export function useFieldEditor(resetMission) {
   const [basePoint, setBasePoint] = useState(null)
   const [ugvRoute, setUgvRoute] = useState(null)
   const [intersectionWarning, setIntersectionWarning] = useState(null)
+  // Metadata preserved from the loaded JSON so saving back keeps name,
+  // description, geo-reference, UGV params, etc. that the editor does not
+  // expose as editable state.
+  const [loadedMeta, setLoadedMeta] = useState(null)
+  // Optional File System Access handle: when present, saving writes back
+  // to the same file on disk instead of offering a download / copy modal.
+  const [fileHandle, setFileHandle] = useState(null)
 
   const activeField = useMemo(() => {
     if (drawnPolygon?.length >= 3) {
@@ -115,10 +122,17 @@ export function useFieldEditor(resetMission) {
       if (drawingPoints.length >= 3) {
         if (polygonArea(drawingPoints) < MIN_FIELD_AREA_M2) {
           setIntersectionWarning(WARN.FIELD_TOO_SMALL)
-          // Keep drawing mode so the user can keep adding points
           return
         }
-        setDrawnPolygon([...drawingPoints])
+        // Recentre geo origin to polygon centroid so coords stay near (0,0)
+        const n = drawingPoints.length
+        const cx = drawingPoints.reduce((s, p) => s + p[0], 0) / n
+        const cy = drawingPoints.reduce((s, p) => s + p[1], 0) / n
+        const [cLng, cLat] = xyToLngLat(cx, cy)
+        setGeoOrigin(cLng, cLat)
+        // Reproject all points relative to new origin
+        const centred = drawingPoints.map(([x, y]) => [x - cx, y - cy])
+        setDrawnPolygon(centred)
       }
       setDrawingPoints([])
       setMode(MODE.NONE)
@@ -191,18 +205,66 @@ export function useFieldEditor(resetMission) {
     setIntersectionWarning(null)
   }, [mode, drawingPoints, drawnPolygon, obstacles])
 
-  const handleLoadField = useCallback((fieldData) => {
-    setDrawnPolygon(fieldData.boundary)
-    setObstacles(fieldData.obstacles ?? [])
-    setBasePoint(fieldData.basePoint ?? null)
+  const handleLoadField = useCallback((fieldData, handle = null) => {
+    // Support both flat format { boundary, ugvRoute, ... } and
+    // exported mission format { field: { boundary, ugvRoute, ... }, ... }.
+    const src = fieldData.field ?? fieldData
+    // If the file carries a real-world geographic origin (e.g. FTW
+    // polygons normalized from UTM), anchor the local flat frame there
+    // so the polygon renders at its true location on the map.
+    const originLngLat = src._origin_lnglat ?? fieldData._origin_lnglat ?? null
+    if (Array.isArray(originLngLat) && originLngLat.length === 2) {
+      setGeoOrigin(originLngLat[0], originLngLat[1])
+    }
+    const route = src.ugvRoute ?? src.ugv_polyline ?? null
+    setDrawnPolygon(src.boundary)
+    setObstacles(src.obstacles ?? [])
+    setBasePoint(src.basePoint ?? src.base_point ?? null)
+    setUgvRoute(route)
+    // Preserve metadata fields that the editor does not expose as state
+    // so a later save round-trips them unchanged.
+    setLoadedMeta({
+      name: src.name ?? null,
+      description: src.description ?? null,
+      ugv_speed: src.ugv_speed ?? null,
+      ugv_t_service: src.ugv_t_service ?? null,
+      _origin_lnglat: src._origin_lnglat ?? null,
+      _utm_origin: src._utm_origin ?? null,
+      _utm_epsg: src._utm_epsg ?? null,
+    })
+    setFileHandle(handle)
     resetDrawingAndMission()
+    // Return loaded route so caller can auto-switch mission type.
+    return { ugvRoute: route }
   }, [resetDrawingAndMission])
+
+  // Build a JSON-serializable field document from the current editor state
+  // merged with the metadata preserved at load time.
+  const buildFieldDoc = useCallback(() => {
+    const doc = {}
+    if (loadedMeta?.name) doc.name = loadedMeta.name
+    if (loadedMeta?.description) doc.description = loadedMeta.description
+    doc.boundary = drawnPolygon ?? []
+    doc.obstacles = obstacles ?? []
+    if (basePoint) doc.base_point = basePoint
+    if (ugvRoute && ugvRoute.length >= 2) {
+      doc.ugv_polyline = ugvRoute
+      doc.ugv_speed = loadedMeta?.ugv_speed ?? 2.0
+      doc.ugv_t_service = loadedMeta?.ugv_t_service ?? 300.0
+    }
+    if (loadedMeta?._utm_origin) doc._utm_origin = loadedMeta._utm_origin
+    if (loadedMeta?._origin_lnglat) doc._origin_lnglat = loadedMeta._origin_lnglat
+    if (loadedMeta?._utm_epsg) doc._utm_epsg = loadedMeta._utm_epsg
+    return doc
+  }, [loadedMeta, drawnPolygon, obstacles, basePoint, ugvRoute])
 
   const handleClear = useCallback(() => {
     setDrawnPolygon(null)
     setObstacles([])
     setBasePoint(null)
     setUgvRoute(null)
+    setLoadedMeta(null)
+    setFileHandle(null)
     resetDrawingAndMission()
   }, [resetDrawingAndMission])
 
@@ -213,6 +275,8 @@ export function useFieldEditor(resetMission) {
     basePoint,
     ugvRoute,
     intersectionWarning,
+    loadedMeta,
+    fileHandle,
     addPoint,
     undoPoint,
     handleMapClick,
@@ -222,5 +286,8 @@ export function useFieldEditor(resetMission) {
     handleToggleDrawUgvRoute,
     handleLoadField,
     handleClear,
+    setBasePoint,
+    setUgvRoute,
+    buildFieldDoc,
   }
 }

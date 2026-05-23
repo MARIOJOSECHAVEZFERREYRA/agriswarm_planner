@@ -1,0 +1,31 @@
+{
+    "name": "slow_ugv",
+    "description": "Trapezoidal field with one obstacle and slow UGV (0.5 m/s) on a long polyline. UAV finishes cycles much faster than UGV advances, producing significant rv_wait_s. Tests timing coordination and wait accumulation across many stops.",
+    "boundary": [
+        [0, 0],
+        [350, 0],
+        [380, 280],
+        [30, 300]
+    ],
+    "obstacles": [
+        [
+            [120, 100],
+            [200, 90],
+            [210, 160],
+            [130, 170]
+        ]
+    ],
+    "base_point": [-20, -40],
+    "ugv_polyline": [
+        [
+            3,
+            -13.4
+        ],
+        [
+            346.6,
+            -14
+        ]
+    ],
+    "ugv_speed": 0.5,
+    "ugv_t_service": 300
+}

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { ensureClosed } from '../utils/geo'
-import { MODE } from '../utils/modes'
-import { C } from '../utils/colors'
+import { useCallback, useRef, useState } from 'react'
+import { ensureClosed, polylineLength, formatMeters } from '../utils/geo.js'
+import { MODE } from '../utils/modes.js'
+import { C } from '../utils/colors.js'
+import { useDroneCatalog } from '../hooks/useDroneCatalog.js'
+import { useMissionCompute } from '../hooks/useMissionCompute.js'
 
 const STATUS_COLOR = {
   pending:   C.warning,
@@ -151,11 +153,15 @@ function FieldSection({
   mode, activeField, drawingPtsCount,
   onToggleDrawPolygon, onToggleDrawObstacle,
   onLoadField, onClear,
+  fileHandle, loadedMetaName, buildFieldDoc,
 }) {
   const fileRef = useRef(null)
+  const [jsonModal, setJsonModal] = useState(null)
+  const [toast, setToast] = useState(null)
   const isDrawingPolygon  = mode === MODE.DRAW_POLYGON
   const isDrawingObstacle = mode === MODE.DRAW_OBSTACLE
   const hasField          = !!activeField
+  const fsaSupported      = typeof window !== 'undefined' && 'showOpenFilePicker' in window
 
   function handleLoadJSON(e) {
     const file = e.target.files[0]
@@ -167,6 +173,55 @@ function FieldSection({
     }
     reader.readAsText(file)
     e.target.value = ''
+  }
+
+  async function handleOpenFile() {
+    // File System Access API path: pick a file AND keep the handle so we
+    // can write back in-place on save.
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Field JSON', accept: { 'application/json': ['.json'] } }],
+      })
+      const file = await handle.getFile()
+      const text = await file.text()
+      onLoadField(JSON.parse(text), handle)
+    } catch (err) {
+      if (err?.name !== 'AbortError') alert('Failed to open file: ' + err.message)
+    }
+  }
+
+  async function handleSaveField() {
+    const doc = buildFieldDoc()
+    if (!doc.boundary || doc.boundary.length < 3) {
+      alert('Draw or load a field first.')
+      return
+    }
+    const json = JSON.stringify(doc, null, 2)
+
+    if (fileHandle) {
+      try {
+        const writable = await fileHandle.createWritable()
+        await writable.write(json)
+        await writable.close()
+        setToast(`Saved to ${fileHandle.name}`)
+        setTimeout(() => setToast(null), 2000)
+        return
+      } catch (err) {
+        alert('Write failed: ' + err.message)
+        return
+      }
+    }
+    setJsonModal(json)
+  }
+
+  async function handleCopyJson() {
+    try {
+      await navigator.clipboard.writeText(jsonModal)
+      setToast('Copied to clipboard')
+      setTimeout(() => setToast(null), 1500)
+    } catch {
+      // clipboard write may be blocked; the textarea is still selectable.
+    }
   }
 
   return (
@@ -192,17 +247,73 @@ function FieldSection({
       </div>
 
       <div style={s.btnRow}>
-        <Btn variant='default' onClick={() => fileRef.current.click()}>Load JSON</Btn>
+        {fsaSupported
+          ? <Btn variant='default' onClick={handleOpenFile}>Open Field</Btn>
+          : <Btn variant='default' onClick={() => fileRef.current.click()}>Load JSON</Btn>}
+        <Btn variant='default' disabled={!hasField} onClick={handleSaveField}>
+          {fileHandle ? 'Save' : 'Save As…'}
+        </Btn>
+      </div>
+
+      <div style={s.btnRow}>
         <Btn variant='danger' disabled={!hasField && mode === MODE.NONE} onClick={onClear}>Clear All</Btn>
       </div>
 
       <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleLoadJSON} />
+
+      {fileHandle && (
+        <div style={{ fontSize: 11, color: C.muted }}>
+          File: <span style={{ color: '#9ad0ff' }}>{fileHandle.name}</span>
+          {loadedMetaName ? ` (${loadedMetaName})` : ''}
+        </div>
+      )}
 
       {activeField?.obstacles?.length > 0 && (
         <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ color: '#e36d2e' }}>+</span>
           {activeField.obstacles.length} obstacle{activeField.obstacles.length > 1 ? 's' : ''} defined
         </div>
+      )}
+
+      {jsonModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setJsonModal(null)}>
+          <div style={{
+            background: '#111', padding: 16, borderRadius: 8, width: '80%',
+            maxWidth: 900, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            gap: 10, border: `1px solid ${C.border}`,
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 13, color: C.muted }}>
+                Copy this JSON and save it into your field file.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn variant='default' onClick={handleCopyJson}>Copy</Btn>
+                <Btn variant='danger' onClick={() => setJsonModal(null)}>Close</Btn>
+              </div>
+            </div>
+            <textarea
+              readOnly
+              value={jsonModal}
+              style={{
+                flex: 1, minHeight: 300, fontFamily: 'monospace', fontSize: 12,
+                padding: 8, background: '#000', color: '#ddd', border: `1px solid ${C.border}`,
+                borderRadius: 4, resize: 'vertical',
+              }}
+              onFocus={e => e.target.select()}
+            />
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          background: '#1f6feb', color: 'white', padding: '8px 14px', borderRadius: 6,
+          fontSize: 13, zIndex: 10000, boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        }}>{toast}</div>
       )}
     </div>
   )
@@ -232,10 +343,7 @@ function GroundSection({
   const isDrawingUgv  = mode === MODE.DRAW_UGV_ROUTE
   const hasRoute      = ugvRoute && ugvRoute.length >= 2
 
-  const routeLengthM = hasRoute
-    ? ugvRoute.slice(1).reduce((acc, pt, i) => acc + Math.hypot(pt[0] - ugvRoute[i][0], pt[1] - ugvRoute[i][1]), 0)
-    : 0
-  const fmtM = m => m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(0)} m`
+  const routeLengthM = hasRoute ? polylineLength(ugvRoute) : 0
 
   const isMobile = missionType === 'mobile'
   const typeInfo  = MISSION_TYPES.find(t => t.value === missionType)
@@ -315,16 +423,16 @@ function GroundSection({
           >
             {isDrawingUgv
               ? drawingLengthM > 0
-                ? `Finish Route (${fmtM(drawingLengthM)})`
+                ? `Finish Route (${formatMeters(drawingLengthM)})`
                 : `Finish Route (${drawingPtsCount} pts)`
               : hasRoute
-                ? `Redraw UGV Route (${fmtM(routeLengthM)})`
+                ? `Redraw UGV Route (${formatMeters(routeLengthM)})`
                 : 'Draw UGV Route'}
           </Btn>
 
           {hasRoute && !isDrawingUgv && (
             <div style={{ fontSize: 11, color: C.muted }}>
-              Route: {fmtM(routeLengthM)} · {ugvRoute.length} waypoints
+              Route: {formatMeters(routeLengthM)} · {ugvRoute.length} waypoints
             </div>
           )}
 
@@ -384,6 +492,7 @@ function ParametersSection({
   margin, setMargin,
   defaults,
   strategy, setStrategy,
+  fixedAngle, setFixedAngle,
 }) {
   const d = defaults
 
@@ -423,10 +532,24 @@ function ParametersSection({
       <div>
         <div style={s.label}>Planning strategy</div>
         <select style={s.select} value={strategy} onChange={e => setStrategy(e.target.value)}>
-          <option value="grid">Grid Search (exhaustivo, recomendado)</option>
+          <option value="grid">GA (exhaustivo, recomendado)</option>
           <option value="genetic">Genetic Algorithm (GA)</option>
+          <option value="fixed">Fixed Angle (sin optimización)</option>
         </select>
       </div>
+
+      {strategy === 'fixed' && (
+        <div style={{ marginTop: 8 }}>
+          <ParamInput
+            label="Sweep angle (°)"
+            value={fixedAngle}
+            onChange={setFixedAngle}
+            min={0}
+            max={179}
+            hint={<RangeHint min={0} max={179} unit="°" />}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -594,51 +717,56 @@ export default function MissionPanel({
   onToggleDrawPolygon, onToggleDrawObstacle, onToggleSetBasePoint,
   onToggleDrawUgvRoute,
   onLoadField, onClear, onMissionReady, onStartSim, onStopSim, simEnabled, onViewDroneSpecs,
+  setBasePoint, setUgvRoute, resetMission,
+  fileHandle, loadedMetaName, buildFieldDoc,
 }) {
-  const [drones, setDrones]         = useState([])
-  const [drone, setDrone]           = useState('')
-  const [missionType, setMissionType] = useState('static')
-  // Mission parameter ranges (populated from /drones/{name}/defaults)
-  const [defaults, setDefaults]     = useState(null)
-  // User-editable mission parameters
+  const [validationError, setValidationError] = useState(null)
+  const [missionType, setMissionTypeRaw] = useState('static')
   const [sprayWidth, setSprayWidth] = useState('')
-  const [speed, setSpeed]           = useState('')
-  const [appRate, setAppRate]       = useState('')
-  const [margin, setMargin]         = useState('')
-  const [strategy, setStrategy]     = useState('grid')
-  const [ugvSpeed, setUgvSpeed]     = useState(2.0)
+  const [speed, setSpeed] = useState('')
+  const [appRate, setAppRate] = useState('')
+  const [margin, setMargin] = useState('')
+  const [strategy, setStrategy] = useState('grid')
+  const [fixedAngle, setFixedAngle] = useState(0)
+  const [ugvSpeed, setUgvSpeed] = useState(2.0)
   const [ugvTService, setUgvTService] = useState(300)
-  const [mission, setMission]       = useState(null)
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState(null)
   const [showExport, setShowExport] = useState(false)
-  const pollRef = useRef(null)
 
-  useEffect(() => () => clearInterval(pollRef.current), [])
-
-  useEffect(() => {
-    fetch('/drones').then(r => r.json()).then(data => {
-      setDrones(data)
-      if (data.length) fetchAndApplyDefaults(data[0].name)
-    }).catch(console.error)
+  const applyDroneDefaults = useCallback((nextDefaults) => {
+    setSprayWidth(nextDefaults.swath_m)
+    setSpeed(nextDefaults.speed_ms)
+    setAppRate(nextDefaults.app_rate_l_ha)
+    setMargin(nextDefaults.margin_m)
   }, [])
 
-  function fetchAndApplyDefaults(name) {
-    setDrone(name)
-    fetch(`/drones/${encodeURIComponent(name)}/defaults`)
-      .then(r => r.json())
-      .then(d => {
-        setDefaults(d)
-        setSprayWidth(d.swath_m)
-        setSpeed(d.speed_ms)
-        setAppRate(d.app_rate_l_ha)
-        setMargin(d.margin_m)
-      })
-      .catch(console.error)
-  }
+  const {
+    drones,
+    drone,
+    defaults,
+    error: droneError,
+    selectDrone,
+  } = useDroneCatalog(applyDroneDefaults)
+
+  const {
+    mission,
+    loading,
+    error: missionError,
+    computeMission,
+    resetMissionState,
+  } = useMissionCompute(onMissionReady)
+
+  const setMissionType = useCallback((type) => {
+    setMissionTypeRaw(type)
+    setBasePoint(null)
+    setUgvRoute(null)
+    resetMission()
+    resetMissionState()
+    setValidationError(null)
+  }, [resetMission, resetMissionState, setBasePoint, setUgvRoute])
 
   function handleDroneChange(name) {
-    fetchAndApplyDefaults(name)
+    setValidationError(null)
+    void selectDrone(name)
   }
 
   async function handleCompute() {
@@ -646,87 +774,68 @@ export default function MissionPanel({
     const isMobileMode = missionType === 'mobile'
     const hasUgvRouteOk = ugvRoute && ugvRoute.length >= 2
     if (isMobileMode && !hasUgvRouteOk) {
-      setError('Please draw a UGV route before computing the mission.')
+      setValidationError('Please draw a UGV route before computing the mission.')
       return
     }
     if (!isMobileMode && !basePoint) {
-      setError('Please set a base point before computing the mission.')
+      setValidationError('Please set a base point before computing the mission.')
       return
     }
     const sw = Number(sprayWidth)
     const ar = Number(appRate)
     const sp = Number(speed)
     const mg = Number(margin)
-    if (!sw || sw <= 0) { setError('Spray width must be > 0.'); return }
-    if (defaults?.spray_swath_min_m != null && sw < defaults.spray_swath_min_m)
-      { setError(`Spray width too low (min ${defaults.spray_swath_min_m} m).`); return }
-    if (defaults?.spray_swath_max_m != null && sw > defaults.spray_swath_max_m)
-      { setError(`Spray width too high (max ${defaults.spray_swath_max_m} m).`); return }
-    if (!ar || ar <= 0) { setError('Application rate must be > 0.'); return }
-    if (defaults?.app_rate_min_l_ha != null && ar < defaults.app_rate_min_l_ha)
-      { setError(`App rate too low (min ${defaults.app_rate_min_l_ha} L/ha).`); return }
-    if (defaults?.app_rate_max_l_ha != null && ar > defaults.app_rate_max_l_ha)
-      { setError(`App rate too high (max ${defaults.app_rate_max_l_ha} L/ha).`); return }
-    if (!sp || sp <= 0) { setError('Speed must be > 0.'); return }
-    if (defaults?.speed_min_ms != null && sp < defaults.speed_min_ms)
-      { setError(`Speed too low (min ${defaults.speed_min_ms} m/s).`); return }
-    if (defaults?.speed_max_ms != null && sp > defaults.speed_max_ms)
-      { setError(`Speed too high (max ${defaults.speed_max_ms} m/s).`); return }
-    if (isNaN(mg) || mg < 0) { setError('Margin must be >= 0.'); return }
-    setLoading(true); setError(null); setMission(null)
-    clearInterval(pollRef.current)
 
-    try {
-      const coords = ensureClosed(activeField.coordinates)
-      const obs    = (activeField.obstacles ?? []).map(ensureClosed)
-
-      const isMobile    = missionType === 'mobile'
-      const hasUgvRoute = ugvRoute && ugvRoute.length >= 2
-
-      const fieldPayload = {
-        coordinates: coords,
-        obstacles: obs,
-        base_point: isMobile && hasUgvRoute ? ugvRoute[0] : basePoint,
-      }
-
-      if (isMobile && hasUgvRoute) {
-        fieldPayload.ugv_polyline  = ugvRoute
-        fieldPayload.ugv_speed     = Number(ugvSpeed)
-        fieldPayload.ugv_t_service = Number(ugvTService)
-      }
-
-      const res = await fetch('/mission/compute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `Mission ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
-          field: fieldPayload,
-          spray_width: Number(sprayWidth),
-          strategy,
-          drone_name: drone,
-          app_rate: Number(appRate),
-          cruise_speed_ms: Number(speed),
-          margin_m: Number(margin),
-        }),
-      })
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? res.statusText) }
-      const data = await res.json()
-      setMission(data)
-
-      pollRef.current = setInterval(async () => {
-        const r = await fetch(`/mission/${data.id}`)
-        const m = await r.json()
-        setMission(m)
-        if (m.status === 'completed' || m.status === 'failed') {
-          clearInterval(pollRef.current)
-          if (m.status === 'completed') onMissionReady(m, m.waypoints)
-        }
-      }, 1500)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
+    const rangeCheck = (val, name, unit, minKey, maxKey) => {
+      if (!val || val <= 0) return `${name} must be > 0.`
+      if (defaults?.[minKey] != null && val < defaults[minKey]) return `${name} too low (min ${defaults[minKey]} ${unit}).`
+      if (defaults?.[maxKey] != null && val > defaults[maxKey]) return `${name} too high (max ${defaults[maxKey]} ${unit}).`
+      return null
     }
+
+    const err =
+      rangeCheck(sw, 'Spray width', 'm', 'spray_swath_min_m', 'spray_swath_max_m') ||
+      rangeCheck(ar, 'App rate', 'L/ha', 'app_rate_min_l_ha', 'app_rate_max_l_ha') ||
+      rangeCheck(sp, 'Speed', 'm/s', 'speed_min_ms', 'speed_max_ms') ||
+      (isNaN(mg) || mg < 0 ? 'Margin must be >= 0.' : null)
+    if (err) {
+      setValidationError(err)
+      return
+    }
+
+    setValidationError(null)
+
+    const coords = ensureClosed(activeField.coordinates)
+    const obs = (activeField.obstacles ?? []).map(ensureClosed)
+    const isMobile = missionType === 'mobile'
+    const hasUgvRoute = ugvRoute && ugvRoute.length >= 2
+    const fieldPayload = {
+      coordinates: coords,
+      obstacles: obs,
+      base_point: isMobile && hasUgvRoute ? ugvRoute[0] : basePoint,
+    }
+
+    if (isMobile && hasUgvRoute) {
+      fieldPayload.ugv_polyline = ugvRoute
+      fieldPayload.ugv_speed = Number(ugvSpeed)
+      fieldPayload.ugv_t_service = Number(ugvTService)
+    }
+
+    const strategyParams = strategy === 'fixed'
+      ? { angle: Number(fixedAngle) }
+      : undefined
+
+    await computeMission({
+      name: `Mission ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
+      field: fieldPayload,
+      spray_width: sw,
+      strategy,
+      strategy_params: strategyParams,
+      drone_name: drone,
+      app_rate: ar,
+      cruise_speed_ms: sp,
+      margin_m: mg,
+    })
   }
 
   function handleExport(name) {
@@ -743,6 +852,18 @@ export default function MissionPanel({
       total_distance_m: mission.total_distance,
       coverage_area_m2: mission.coverage_area,
       spray_width_m: mission.spray_width,
+      overrides: {
+        swath: parseFloat(sprayWidth) || undefined,
+        speed: parseFloat(speed) || undefined,
+        app_rate: parseFloat(appRate) || undefined,
+        margin: parseFloat(margin) || undefined,
+      },
+      field: activeField ? {
+        boundary: activeField.coordinates,
+        obstacles: activeField.obstacles ?? [],
+        basePoint: basePoint ?? undefined,
+        ugvRoute: ugvRoute ?? undefined,
+      } : undefined,
       metrics,
       waypoints: mission.waypoints.map(w => ({
         sequence: w.sequence, x: w.x, y: w.y, type: w.waypoint_type,
@@ -765,6 +886,20 @@ export default function MissionPanel({
   const hasUgvRoute   = ugvRoute && ugvRoute.length >= 2
   const groundReady   = needsUgvRoute ? hasUgvRoute : hasBasePoint
   const canCompute    = hasField && groundReady && !loading && mode === MODE.NONE
+  const error = validationError ?? missionError ?? droneError
+
+  const handleFieldLoad = useCallback((data, handle) => {
+    resetMissionState()
+    setValidationError(null)
+    const result = onLoadField(data, handle)
+    setMissionTypeRaw(result?.ugvRoute?.length >= 2 ? 'mobile' : 'static')
+  }, [onLoadField, resetMissionState])
+
+  const handleClearAll = useCallback(() => {
+    resetMissionState()
+    setValidationError(null)
+    onClear()
+  }, [onClear, resetMissionState])
 
   return (
     <div style={s.panel}>
@@ -783,8 +918,11 @@ export default function MissionPanel({
         drawingPtsCount={drawingPtsCount}
         onToggleDrawPolygon={onToggleDrawPolygon}
         onToggleDrawObstacle={onToggleDrawObstacle}
-        onLoadField={onLoadField}
-        onClear={onClear}
+        onLoadField={handleFieldLoad}
+        onClear={handleClearAll}
+        fileHandle={fileHandle}
+        loadedMetaName={loadedMetaName}
+        buildFieldDoc={buildFieldDoc}
       />
 
       <GroundSection
@@ -815,6 +953,8 @@ export default function MissionPanel({
         defaults={defaults}
         strategy={strategy}
         setStrategy={setStrategy}
+        fixedAngle={fixedAngle}
+        setFixedAngle={setFixedAngle}
       />
 
       <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
@@ -834,12 +974,12 @@ export default function MissionPanel({
             Draw or load a field to continue
           </div>
         )}
-        {mode !== MODE.DRAW_UGV_ROUTE && hasField && !hasBasePoint && (
+        {mode !== MODE.DRAW_UGV_ROUTE && hasField && !needsUgvRoute && !hasBasePoint && (
           <div style={{ fontSize: 11, color: C.warning, textAlign: 'center', marginTop: 7 }}>
-            {missionType === 'mobile' ? 'Set UGV start position before computing' : 'Set a base station before computing'}
+            Set a base station before computing
           </div>
         )}
-        {mode !== MODE.DRAW_UGV_ROUTE && hasField && hasBasePoint && needsUgvRoute && !hasUgvRoute && (
+        {mode !== MODE.DRAW_UGV_ROUTE && hasField && needsUgvRoute && !hasUgvRoute && (
           <div style={{ fontSize: 11, color: C.warning, textAlign: 'center', marginTop: 7 }}>
             Draw the UGV route to enable mobile rendezvous
           </div>

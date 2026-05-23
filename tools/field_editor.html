@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Field Editor — Test Field Designer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #d4d4d8; display: flex; height: 100vh; overflow: hidden; }
+
+  /* Sidebar */
+  #sidebar { width: 320px; display: flex; flex-direction: column; border-right: 1px solid #27272a; background: #18181b; }
+  #sidebar header { padding: 14px 16px; border-bottom: 1px solid #27272a; }
+  #sidebar header h1 { font-size: 15px; font-weight: 600; color: #fafafa; }
+  #sidebar header p { font-size: 11px; color: #71717a; margin-top: 2px; }
+  .panel { padding: 12px 16px; border-bottom: 1px solid #27272a; }
+  .panel-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #71717a; margin-bottom: 8px; }
+  .scroll-area { flex: 1; overflow-y: auto; }
+
+  /* Buttons */
+  .btn { display: block; width: 100%; padding: 7px 12px; font-size: 12px; font-family: inherit; border: 1px solid #3f3f46; border-radius: 5px; cursor: pointer; background: #27272a; color: #d4d4d8; transition: background 0.1s; margin-bottom: 4px; text-align: left; }
+  .btn:hover { background: #3f3f46; }
+  .btn.active { background: #164e63; border-color: #06b6d4; color: #06b6d4; }
+  .btn.primary { background: #065f46; border-color: #10b981; color: #10b981; }
+  .btn.primary:hover { background: #047857; }
+  .btn.danger { background: #450a0a; border-color: #f87171; color: #f87171; }
+  .btn.danger:hover { background: #7f1d1d; }
+  .btn-row { display: flex; gap: 4px; margin-bottom: 4px; }
+  .btn-row .btn { flex: 1; }
+  label.file-btn { display: block; padding: 7px 12px; font-size: 12px; border: 1px solid #3f3f46; border-radius: 5px; cursor: pointer; background: #27272a; color: #d4d4d8; text-align: center; margin-bottom: 4px; }
+  label.file-btn:hover { background: #3f3f46; }
+  input[type=file] { display: none; }
+
+  /* Inputs */
+  .field-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+  .field-row label { flex: 1; color: #a1a1aa; white-space: nowrap; }
+  .field-row input { width: 70px; padding: 4px 6px; background: #27272a; color: #fafafa; border: 1px solid #3f3f46; border-radius: 4px; font-size: 12px; font-family: inherit; }
+
+  /* Info text */
+  .info { font-size: 11px; color: #71717a; line-height: 1.5; }
+  .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 11px; color: #67e8f9; max-height: 180px; overflow-y: auto; white-space: pre; line-height: 1.4; background: #09090b; border-radius: 4px; padding: 6px 8px; }
+
+  /* Mode indicator */
+  .mode-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .mode-badge.boundary { background: #164e63; color: #22d3ee; }
+  .mode-badge.obstacle { background: #431407; color: #fb923c; }
+  .mode-badge.ugv { background: #422006; color: #f59e0b; }
+  .mode-badge.base { background: #052e16; color: #4ade80; }
+  .mode-badge.none { background: #27272a; color: #71717a; }
+
+  /* Canvas */
+  #canvas-wrap { flex: 1; position: relative; background: #09090b; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .status-bar { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; padding: 4px 12px; background: rgba(0,0,0,0.75); font-size: 11px; color: #a1a1aa; font-family: monospace; }
+  .cursor-pos { position: absolute; top: 8px; right: 12px; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 3px; font-size: 11px; font-family: monospace; color: #a1a1aa; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <header>
+    <h1>Field Editor</h1>
+    <p>Design test fields for UAV-UGV mission planner</p>
+  </header>
+
+  <div class="scroll-area">
+    <!-- File -->
+    <div class="panel">
+      <div class="panel-title">File</div>
+      <label class="file-btn" for="fileInput">Load JSON</label>
+      <input type="file" id="fileInput" accept=".json">
+      <button class="btn primary" id="btnSave">Save JSON</button>
+      <div class="info" id="fileInfo" style="margin-top: 6px;">No file loaded</div>
+    </div>
+
+    <!-- Drawing tools -->
+    <div class="panel">
+      <div class="panel-title">Draw <span class="mode-badge none" id="modeBadge">idle</span></div>
+      <button class="btn" id="btnBoundary">Boundary</button>
+      <button class="btn" id="btnObstacle">Add Obstacle</button>
+      <button class="btn" id="btnUgv">UGV Route</button>
+      <button class="btn" id="btnBase">Base Point</button>
+      <div class="btn-row" style="margin-top: 6px;">
+        <button class="btn" id="btnUndo">Undo</button>
+        <button class="btn danger" id="btnClearMode">Clear current</button>
+      </div>
+      <button class="btn danger" id="btnClearAll">Clear all</button>
+      <div class="info" style="margin-top: 8px;">
+        Left click = add point &middot; Right click = undo<br>
+        Scroll = zoom &middot; Middle/Shift+drag = pan<br>
+        Double click = finish boundary/obstacle
+      </div>
+    </div>
+
+    <!-- Metadata -->
+    <div class="panel">
+      <div class="panel-title">Metadata</div>
+      <div class="field-row"><label>Name</label><input id="fieldName" value="" style="width:140px;"></div>
+      <div class="field-row"><label>Description</label><input id="fieldDesc" value="" style="width:140px;"></div>
+    </div>
+
+    <!-- UGV settings -->
+    <div class="panel" id="ugvPanel">
+      <div class="panel-title">UGV Settings</div>
+      <div class="field-row"><label>Speed (m/s)</label><input type="number" id="ugvSpeed" value="2.0" step="0.1" min="0.1"></div>
+      <div class="field-row"><label>Service time (s)</label><input type="number" id="ugvService" value="300" step="10" min="10"></div>
+    </div>
+
+    <!-- Data preview -->
+    <div class="panel">
+      <div class="panel-title">Data</div>
+      <div class="mono" id="dataPreview">-</div>
+    </div>
+  </div>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="cv"></canvas>
+  <div class="cursor-pos" id="cursorPos">-</div>
+  <div class="status-bar">
+    <span id="statusLeft">-</span>
+    <span id="statusRight">-</span>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv')
+const ctx = cv.getContext('2d')
+
+// ── State ──
+const MODES = { NONE: 'none', BOUNDARY: 'boundary', OBSTACLE: 'obstacle', UGV: 'ugv', BASE: 'base' }
+let mode = MODES.NONE
+let boundary = []
+let obstacles = []
+let ugvPoints = []
+let basePoint = null
+let drawingPts = []
+let fileName = ''
+let fieldName = ''
+let fieldDesc = ''
+
+// ── View ──
+let vx = 0, vy = 0, vs = 1
+let panning = false, panX = 0, panY = 0
+
+const COLORS = {
+  boundary: '#22d3ee', boundaryFill: 'rgba(34,211,238,0.06)',
+  obstacle: '#fb923c', obstacleFill: 'rgba(251,146,60,0.12)',
+  ugv: '#f59e0b', ugvDash: [8, 4],
+  base: '#4ade80',
+  preview: '#818cf8', previewFill: 'rgba(129,140,248,0.08)',
+  grid: '#1e1e24', gridMajor: '#27272a',
+}
+
+// ── Transform ──
+function w2s(wx, wy) {
+  return [(wx - vx) * vs + cv.width / 2, (-wy + vy) * vs + cv.height / 2]
+}
+function s2w(sx, sy) {
+  return [(sx - cv.width / 2) / vs + vx, -((sy - cv.height / 2) / vs - vy)]
+}
+
+// ── Drawing primitives ──
+function polyline(pts, color, lw, dash, close) {
+  if (pts.length < 2) return
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.setLineDash(dash || [])
+  ctx.beginPath(); let [sx, sy] = w2s(pts[0][0], pts[0][1]); ctx.moveTo(sx, sy)
+  for (let i = 1; i < pts.length; i++) { [sx, sy] = w2s(pts[i][0], pts[i][1]); ctx.lineTo(sx, sy) }
+  if (close) ctx.closePath()
+  ctx.stroke(); ctx.restore()
+}
+function fillPoly(pts, color) {
+  if (pts.length < 3) return
+  ctx.save(); ctx.fillStyle = color; ctx.beginPath()
+  let [sx, sy] = w2s(pts[0][0], pts[0][1]); ctx.moveTo(sx, sy)
+  for (let i = 1; i < pts.length; i++) { [sx, sy] = w2s(pts[i][0], pts[i][1]); ctx.lineTo(sx, sy) }
+  ctx.closePath(); ctx.fill(); ctx.restore()
+}
+function circle(wx, wy, r, fill, stroke, lw) {
+  const [sx, sy] = w2s(wx, wy)
+  ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2)
+  if (fill) { ctx.fillStyle = fill; ctx.fill() }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke() }
+}
+function label(wx, wy, text, color, ox, oy) {
+  const [sx, sy] = w2s(wx, wy)
+  ctx.fillStyle = color; ctx.font = `${11 * devicePixelRatio}px monospace`
+  ctx.fillText(text, sx + (ox || 10), sy + (oy || -8))
+}
+
+// ── Main draw ──
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height)
+
+  // Grid
+  const step = vs > 3 ? 25 : vs > 1.5 ? 50 : vs > 0.5 ? 100 : 500
+  const [wl, wt] = s2w(0, 0), [wr, wb] = s2w(cv.width, cv.height)
+  for (let x = Math.floor(Math.min(wl,wr)/step)*step; x <= Math.max(wl,wr); x += step) {
+    const [sx] = w2s(x, 0); ctx.strokeStyle = x === 0 ? COLORS.gridMajor : COLORS.grid; ctx.lineWidth = x === 0 ? 1 : 0.5
+    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, cv.height); ctx.stroke()
+    if (vs > 0.8) { ctx.fillStyle = '#52525b'; ctx.font = `${9*devicePixelRatio}px monospace`; const [,sy] = w2s(0,0); ctx.fillText(`${x}`, sx+2, sy-3) }
+  }
+  for (let y = Math.floor(Math.min(wb,wt)/step)*step; y <= Math.max(wb,wt); y += step) {
+    const [,sy] = w2s(0, y); ctx.strokeStyle = y === 0 ? COLORS.gridMajor : COLORS.grid; ctx.lineWidth = y === 0 ? 1 : 0.5
+    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(cv.width, sy); ctx.stroke()
+    if (vs > 0.8 && y !== 0) { ctx.fillStyle = '#52525b'; ctx.font = `${9*devicePixelRatio}px monospace`; const [sx] = w2s(0,0); ctx.fillText(`${y}`, sx+3, sy-3) }
+  }
+
+  // Boundary
+  if (boundary.length >= 3) { fillPoly(boundary, COLORS.boundaryFill); polyline(boundary, COLORS.boundary, 2, [], true) }
+  boundary.forEach((p, i) => circle(p[0], p[1], 4, COLORS.boundary, '#fff', 1.5))
+
+  // Obstacles
+  obstacles.forEach(obs => { fillPoly(obs, COLORS.obstacleFill); polyline(obs, COLORS.obstacle, 1.5, [], true) })
+
+  // UGV route
+  if (ugvPoints.length >= 2) polyline(ugvPoints, COLORS.ugv, 2.5, COLORS.ugvDash)
+  ugvPoints.forEach((p, i) => {
+    const c = i === 0 ? COLORS.base : i === ugvPoints.length - 1 ? '#a855f7' : COLORS.ugv
+    circle(p[0], p[1], 5, c, '#fff', 1.5)
+  })
+  // UGV segment lengths
+  for (let i = 0; i < ugvPoints.length - 1; i++) {
+    const [x1,y1] = ugvPoints[i], [x2,y2] = ugvPoints[i+1]
+    label((x1+x2)/2, (y1+y2)/2, `${Math.hypot(x2-x1,y2-y1).toFixed(0)}m`, '#d97706', 5, -5)
+  }
+
+  // Base point
+  if (basePoint) { circle(basePoint[0], basePoint[1], 7, COLORS.base, '#fff', 2) }
+
+  // Drawing preview
+  if (drawingPts.length >= 1) {
+    const isClosing = mode === MODES.BOUNDARY || mode === MODES.OBSTACLE
+    if (drawingPts.length >= 2) polyline(drawingPts, COLORS.preview, 2, [4, 4], false)
+    if (drawingPts.length >= 3 && isClosing) fillPoly(drawingPts, COLORS.previewFill)
+    drawingPts.forEach(p => circle(p[0], p[1], 4, COLORS.preview, '#fff', 1.5))
+  }
+}
+
+// ── Fit view ──
+function fitView() {
+  const all = [...boundary, ...obstacles.flat(), ...ugvPoints, ...(basePoint ? [basePoint] : []), ...drawingPts]
+  if (!all.length) return
+  let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity
+  all.forEach(([x,y]) => { x0=Math.min(x0,x); x1=Math.max(x1,x); y0=Math.min(y0,y); y1=Math.max(y1,y) })
+  const pad = 80
+  vx = (x0+x1)/2; vy = (y0+y1)/2
+  vs = Math.min((cv.width-pad*2)/Math.max(x1-x0,1), (cv.height-pad*2)/Math.max(y1-y0,1))
+}
+
+// ── UI updates ──
+function setMode(m) {
+  mode = m; drawingPts = []
+  const badge = document.getElementById('modeBadge')
+  badge.textContent = m; badge.className = `mode-badge ${m}`
+  document.querySelectorAll('#btnBoundary,#btnObstacle,#btnUgv,#btnBase').forEach(b => b.classList.remove('active'))
+  const btnMap = { boundary: 'btnBoundary', obstacle: 'btnObstacle', ugv: 'btnUgv', base: 'btnBase' }
+  if (btnMap[m]) document.getElementById(btnMap[m]).classList.add('active')
+  updateStatus(); draw()
+}
+
+function updateStatus() {
+  const ugvLen = ugvPoints.reduce((s,p,i) => i === 0 ? 0 : s + Math.hypot(p[0]-ugvPoints[i-1][0], p[1]-ugvPoints[i-1][1]), 0)
+  document.getElementById('statusLeft').textContent =
+    `Boundary: ${boundary.length}pts | Obstacles: ${obstacles.length} | UGV: ${ugvPoints.length}pts (${ugvLen.toFixed(0)}m) | Base: ${basePoint ? 'set' : '-'}`
+  document.getElementById('statusRight').textContent = fileName || 'unsaved'
+  updateDataPreview()
+}
+
+function updateDataPreview() {
+  const data = buildJSON()
+  const keys = Object.keys(data)
+  let preview = keys.map(k => {
+    const v = data[k]
+    if (Array.isArray(v) && v.length > 3) return `${k}: [${v.length} items]`
+    if (typeof v === 'string' && v.length > 30) return `${k}: "${v.slice(0,30)}..."`
+    return `${k}: ${JSON.stringify(v)}`
+  }).join('\n')
+  document.getElementById('dataPreview').textContent = preview
+}
+
+function buildJSON() {
+  const data = {}
+  const name = document.getElementById('fieldName').value.trim()
+  const desc = document.getElementById('fieldDesc').value.trim()
+  if (name) data.name = name
+  if (desc) data.description = desc
+  if (boundary.length >= 3) data.boundary = boundary.map(p => [r(p[0]), r(p[1])])
+  data.obstacles = obstacles.map(obs => obs.map(p => [r(p[0]), r(p[1])]))
+  if (basePoint) data.base_point = [r(basePoint[0]), r(basePoint[1])]
+  if (ugvPoints.length >= 2) {
+    data.ugv_polyline = ugvPoints.map(p => [r(p[0]), r(p[1])])
+    data.ugv_speed = parseFloat(document.getElementById('ugvSpeed').value) || 2.0
+    data.ugv_t_service = parseFloat(document.getElementById('ugvService').value) || 300
+  }
+  return data
+}
+function r(v) { return Math.round(v * 10) / 10 }
+
+// ── File I/O (File System Access API — writes back to same file) ──
+let fileHandle = null  // keeps reference to opened file for in-place save
+
+function loadFieldData(text, name) {
+  const d = JSON.parse(text)
+  boundary = (d.boundary || []).map(p => [...p])
+  obstacles = (d.obstacles || []).map(obs => obs.map(p => [...p]))
+  basePoint = d.base_point ? [...d.base_point] : null
+  ugvPoints = (d.ugv_polyline || []).map(p => [...p])
+  document.getElementById('fieldName').value = d.name || ''
+  document.getElementById('fieldDesc').value = d.description || ''
+  document.getElementById('ugvSpeed').value = d.ugv_speed ?? 2.0
+  document.getElementById('ugvService').value = d.ugv_t_service ?? 300
+  fileName = name
+  document.getElementById('fileInfo').textContent = fileName
+  setMode(MODES.NONE); fitView(); updateStatus(); draw()
+}
+
+// Preferred: File System Access API (Chrome/Edge) — keeps handle for overwrite
+async function openWithFSAPI() {
+  const [handle] = await window.showOpenFilePicker({
+    types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+  })
+  fileHandle = handle
+  const file = await handle.getFile()
+  const text = await file.text()
+  loadFieldData(text, file.name)
+}
+
+// Fallback: classic <input type=file> (Firefox)
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return
+  fileHandle = null
+  const reader = new FileReader()
+  reader.onload = ev => { try { loadFieldData(ev.target.result, file.name) } catch { alert('Invalid JSON') } }
+  reader.readAsText(file); e.target.value = ''
+})
+
+// Load button — try FSAPI first, fallback to file input
+document.querySelector('label[for=fileInput]').addEventListener('click', async e => {
+  if (!window.showOpenFilePicker) return  // let default label→input behavior work
+  e.preventDefault()
+  try { await openWithFSAPI() } catch (err) { if (err.name !== 'AbortError') console.error(err) }
+})
+
+// Save — overwrite original file if handle exists, else download
+document.getElementById('btnSave').addEventListener('click', async () => {
+  if (boundary.length < 3) return alert('Draw a boundary first (3+ points)')
+  const json = JSON.stringify(buildJSON(), null, 4) + '\n'
+
+  if (fileHandle) {
+    try {
+      const writable = await fileHandle.createWritable()
+      await writable.write(json)
+      await writable.close()
+      document.getElementById('fileInfo').textContent = `${fileName} (saved)`
+      return
+    } catch (err) { console.error('FSAPI write failed, falling back to download', err) }
+  }
+
+  // Fallback download
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url
+  a.download = fileName || `${buildJSON().name || 'field'}.json`
+  a.click(); URL.revokeObjectURL(url)
+})
+
+// ── Tool buttons ──
+document.getElementById('btnBoundary').addEventListener('click', () => setMode(mode === MODES.BOUNDARY ? MODES.NONE : MODES.BOUNDARY))
+document.getElementById('btnObstacle').addEventListener('click', () => setMode(mode === MODES.OBSTACLE ? MODES.NONE : MODES.OBSTACLE))
+document.getElementById('btnUgv').addEventListener('click', () => setMode(mode === MODES.UGV ? MODES.NONE : MODES.UGV))
+document.getElementById('btnBase').addEventListener('click', () => setMode(mode === MODES.BASE ? MODES.NONE : MODES.BASE))
+
+document.getElementById('btnUndo').addEventListener('click', () => {
+  if (mode === MODES.UGV && drawingPts.length === 0 && ugvPoints.length > 0) { ugvPoints.pop() }
+  else if (drawingPts.length > 0) { drawingPts.pop() }
+  updateStatus(); draw()
+})
+
+document.getElementById('btnClearMode').addEventListener('click', () => {
+  if (mode === MODES.BOUNDARY) { boundary = []; drawingPts = [] }
+  else if (mode === MODES.OBSTACLE) { drawingPts = [] }
+  else if (mode === MODES.UGV) { ugvPoints = []; drawingPts = [] }
+  else if (mode === MODES.BASE) { basePoint = null }
+  updateStatus(); draw()
+})
+
+document.getElementById('btnClearAll').addEventListener('click', () => {
+  if (!confirm('Clear everything?')) return
+  boundary = []; obstacles = []; ugvPoints = []; basePoint = null; drawingPts = []
+  setMode(MODES.NONE); updateStatus(); draw()
+})
+
+// ── Canvas interaction ──
+function canvasXY(e) {
+  const rect = cv.getBoundingClientRect()
+  return [(e.clientX - rect.left) * devicePixelRatio, (e.clientY - rect.top) * devicePixelRatio]
+}
+
+cv.addEventListener('click', e => {
+  const [sx, sy] = canvasXY(e)
+  const [wx, wy] = s2w(sx, sy)
+  const pt = [r(wx), r(wy)]
+
+  if (mode === MODES.BOUNDARY) { drawingPts.push(pt) }
+  else if (mode === MODES.OBSTACLE) { drawingPts.push(pt) }
+  else if (mode === MODES.UGV) { ugvPoints.push(pt) }
+  else if (mode === MODES.BASE) { basePoint = pt; setMode(MODES.NONE) }
+  updateStatus(); draw()
+})
+
+cv.addEventListener('dblclick', e => {
+  e.preventDefault()
+  if (mode === MODES.BOUNDARY && drawingPts.length >= 3) {
+    boundary = [...drawingPts]; drawingPts = []; setMode(MODES.NONE)
+  } else if (mode === MODES.OBSTACLE && drawingPts.length >= 3) {
+    obstacles.push([...drawingPts]); drawingPts = []; setMode(MODES.NONE)
+  }
+  updateStatus(); draw()
+})
+
+cv.addEventListener('contextmenu', e => {
+  e.preventDefault()
+  if (mode === MODES.UGV && ugvPoints.length > 0) ugvPoints.pop()
+  else if (drawingPts.length > 0) drawingPts.pop()
+  updateStatus(); draw()
+})
+
+// Zoom toward cursor
+cv.addEventListener('wheel', e => {
+  e.preventDefault()
+  const [sx, sy] = canvasXY(e)
+  const [wx, wy] = s2w(sx, sy)
+  vs *= e.deltaY > 0 ? 0.9 : 1.1
+  // Adjust view so world point stays under cursor
+  vx = wx - (sx - cv.width / 2) / vs
+  vy = wy + (sy - cv.height / 2) / vs
+  draw()
+}, { passive: false })
+
+// Pan with middle button or shift+left
+cv.addEventListener('mousedown', e => {
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) { panning = true; panX = e.clientX; panY = e.clientY; e.preventDefault() }
+})
+cv.addEventListener('mousemove', e => {
+  // Cursor position
+  const [sx, sy] = canvasXY(e)
+  const [wx, wy] = s2w(sx, sy)
+  document.getElementById('cursorPos').textContent = `${wx.toFixed(1)}, ${wy.toFixed(1)}`
+
+  if (!panning) return
+  const dx = (e.clientX - panX) * devicePixelRatio / vs
+  const dy = (e.clientY - panY) * devicePixelRatio / vs
+  vx -= dx; vy += dy; panX = e.clientX; panY = e.clientY; draw()
+})
+cv.addEventListener('mouseup', e => { if (e.button === 1 || e.button === 0) panning = false })
+
+// ── Resize ──
+function resize() {
+  const rect = cv.parentElement.getBoundingClientRect()
+  cv.width = rect.width * devicePixelRatio; cv.height = rect.height * devicePixelRatio
+  cv.style.width = rect.width + 'px'; cv.style.height = rect.height + 'px'
+  draw()
+}
+window.addEventListener('resize', resize)
+resize()
+updateStatus()
+</script>
+</body>
+</html>

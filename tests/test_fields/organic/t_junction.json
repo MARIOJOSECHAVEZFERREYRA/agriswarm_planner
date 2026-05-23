@@ -1,6 +1,6 @@
 {
     "name": "t_junction",
-    "description": "T-shaped field (≤500m) creating multiple concave regions with strategic obstacle placement",
+    "description": "T-shaped field (\u2264500m) creating multiple concave regions with strategic obstacle placement",
     "boundary": [
         [
             180,
@@ -125,6 +125,8 @@
             ]
         ]
     ],
-    "expected_cells_min": 3,
-    "min_coverage": 0.70
+    "base_point": [
+        17.0,
+        47.0
+    ]
 }

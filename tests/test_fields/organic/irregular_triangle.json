@@ -1,6 +1,6 @@
 {
     "name": "irregular_triangle",
-    "description": "Triangular field (≤500m) with highly irregular edges and scattered obstacles",
+    "description": "Triangular field (\u2264500m) with highly irregular edges and scattered obstacles",
     "boundary": [
         [
             50,
@@ -111,6 +111,8 @@
             ]
         ]
     ],
-    "expected_cells_min": 1,
-    "min_coverage": 0.75
+    "base_point": [
+        17.0,
+        27.0
+    ]
 }

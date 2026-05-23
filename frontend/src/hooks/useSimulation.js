@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
+function buildWebSocketUrl(path) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}${path}`
+}
+
 /**
  * Opens a WebSocket to /simulation/{missionId} when the mission is completed.
  *
@@ -66,7 +71,8 @@ export function useSimulation(missionId, missionStatus, enabled) {
   useEffect(() => {
     if (!missionId || missionStatus !== 'completed' || !enabled) return
 
-    const ws = new WebSocket(`ws://localhost:8000/simulation/${missionId}`)
+    if (wsRef.current) wsRef.current.close()
+    const ws = new WebSocket(buildWebSocketUrl(`/simulation/${missionId}`))
     wsRef.current = ws
 
     ws.onopen = () => setConnected(true)

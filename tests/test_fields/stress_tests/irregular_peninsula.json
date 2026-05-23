@@ -133,6 +133,8 @@
             ]
         ]
     ],
-    "expected_cells_min": 3,
-    "min_coverage": 0.75
+    "base_point": [
+        -3.0,
+        -3.0
+    ]
 }

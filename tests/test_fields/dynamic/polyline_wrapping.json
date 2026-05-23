@@ -1,0 +1,51 @@
+{
+    "name": "polyline_wrapping",
+    "description": "L-shaped field with UGV polyline wrapping from south to east to north. Long polyline (900m+) with many waypoints ensures UGV is still in transit during early cycles. Tests distributed RV selection and varying deadhead directions across the mission.",
+    "boundary": [
+        [
+            0,
+            0
+        ],
+        [
+            400,
+            0
+        ],
+        [
+            400,
+            200
+        ],
+        [
+            200,
+            200
+        ],
+        [
+            200,
+            450
+        ],
+        [
+            0,
+            450
+        ]
+    ],
+    "obstacles": [],
+    "base_point": [
+        -30,
+        -30
+    ],
+    "ugv_polyline": [
+        [
+            400.9,
+            213.7
+        ],
+        [
+            219.5,
+            213.7
+        ],
+        [
+            214.7,
+            448.2
+        ]
+    ],
+    "ugv_speed": 2.0,
+    "ugv_t_service": 300
+}

@@ -1,0 +1,100 @@
+{
+    "name": "field_with_obstacles",
+    "description": "Hexagonal field with two internal obstacles and UGV running along the full east perimeter from SE to NW. Longer polyline (600m+) prevents RV collapse. Obstacles force concave decomposition; multiple cells must align to polyline direction.",
+    "boundary": [
+        [
+            50,
+            80
+        ],
+        [
+            420,
+            30
+        ],
+        [
+            480,
+            250
+        ],
+        [
+            400,
+            420
+        ],
+        [
+            200,
+            450
+        ],
+        [
+            30,
+            300
+        ]
+    ],
+    "obstacles": [
+        [
+            [
+                150,
+                180
+            ],
+            [
+                230,
+                170
+            ],
+            [
+                250,
+                230
+            ],
+            [
+                200,
+                270
+            ],
+            [
+                140,
+                240
+            ]
+        ],
+        [
+            [
+                280,
+                280
+            ],
+            [
+                350,
+                270
+            ],
+            [
+                370,
+                330
+            ],
+            [
+                320,
+                370
+            ],
+            [
+                270,
+                340
+            ]
+        ]
+    ],
+    "base_point": [
+        440,
+        20
+    ],
+    "ugv_polyline": [
+        [
+            436.6,
+            27.6
+        ],
+        [
+            494.9,
+            237.4
+        ],
+        [
+            407.4,
+            432.3
+        ],
+        [
+            209,
+            462.2
+        ]
+    ],
+    "ugv_speed": 2.0,
+    "ugv_t_service": 300
+}
