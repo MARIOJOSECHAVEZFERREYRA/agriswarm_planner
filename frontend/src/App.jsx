@@ -132,9 +132,9 @@ export default function App() {
         <button
           type="button"
           onClick={() => setPanelOpen(value => !value)}
-          aria-label={panelOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label={panelOpen ? 'Свернуть боковую панель' : 'Развернуть боковую панель'}
           aria-expanded={panelOpen}
-          title={panelOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          title={panelOpen ? 'Свернуть боковую панель' : 'Развернуть боковую панель'}
           style={{
             position: 'absolute',
             top: '50%',

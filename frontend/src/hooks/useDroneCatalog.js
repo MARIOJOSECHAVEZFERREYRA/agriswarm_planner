@@ -16,7 +16,7 @@ export function useDroneCatalog(onDefaultsLoaded) {
   const loadDroneDefaults = useCallback(async (name, signal) => {
     const response = await fetch(`/drones/${encodeURIComponent(name)}/defaults`, { signal })
     if (!response.ok) {
-      throw new Error('Failed to load drone defaults')
+      throw new Error('Не удалось загрузить параметры БПЛА по умолчанию')
     }
 
     const nextDefaults = await response.json()
@@ -34,7 +34,7 @@ export function useDroneCatalog(onDefaultsLoaded) {
       try {
         const response = await fetch('/drones/', { signal: controller.signal })
         if (!response.ok) {
-          throw new Error('Failed to load drones')
+          throw new Error('Не удалось загрузить список БПЛА')
         }
 
         const droneList = await response.json()
@@ -47,7 +47,7 @@ export function useDroneCatalog(onDefaultsLoaded) {
         if (error.name === 'AbortError') {
           return
         }
-        setError(toErrorMessage(error, 'Failed to load drone catalog'))
+        setError(toErrorMessage(error, 'Не удалось загрузить каталог БПЛА'))
       }
     }
 
@@ -62,7 +62,7 @@ export function useDroneCatalog(onDefaultsLoaded) {
       if (error.name === 'AbortError') {
         return
       }
-      setError(toErrorMessage(error, 'Failed to load drone defaults'))
+      setError(toErrorMessage(error, 'Не удалось загрузить параметры БПЛА по умолчанию'))
     }
   }, [loadDroneDefaults])
 

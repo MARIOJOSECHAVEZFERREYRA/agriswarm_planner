@@ -6,12 +6,12 @@ const MIN_FIELD_AREA_M2    = 100  // 10×10 m — below this the field is degene
 const MIN_OBSTACLE_AREA_M2 = 1    // 1 m²  — avoid pixel-size holes
 
 const WARN = {
-  SELF_INTERSECT:     'Invalid shape: edges cannot cross',
-  DUPLICATE_POINT:    'Duplicate point: same location as previous',
-  FIELD_TOO_SMALL:    `Field area too small (min ${MIN_FIELD_AREA_M2} m²)`,
-  OBSTACLE_TOO_SMALL: `Obstacle area too small (min ${MIN_OBSTACLE_AREA_M2} m²)`,
-  OBSTACLE_OUTSIDE:   'Obstacle must be fully inside the field boundary',
-  OBSTACLE_OVERLAP:   'Obstacles cannot touch or overlap each other',
+  SELF_INTERSECT:     'Недопустимая форма: рёбра не могут пересекаться',
+  DUPLICATE_POINT:    'Повторяющаяся точка: совпадает с предыдущей',
+  FIELD_TOO_SMALL:    `Слишком малая площадь поля (мин. ${MIN_FIELD_AREA_M2} м²)`,
+  OBSTACLE_TOO_SMALL: `Слишком малая площадь препятствия (мин. ${MIN_OBSTACLE_AREA_M2} м²)`,
+  OBSTACLE_OUTSIDE:   'Препятствие должно полностью находиться внутри границы поля',
+  OBSTACLE_OVERLAP:   'Препятствия не могут касаться или перекрывать друг друга',
 }
 
 export function useFieldEditor(resetMission) {

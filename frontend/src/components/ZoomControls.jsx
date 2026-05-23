@@ -23,8 +23,8 @@ const ctrlBtn = {
 export default function ZoomControls({ onZoomIn, onZoomOut }) {
   return (
     <div style={{ position: 'absolute', top: 10, right: 10, ...ctrlGroup }}>
-      <button style={ctrlBtn} onClick={onZoomIn} title="Zoom in">+</button>
-      <button style={{ ...ctrlBtn, borderTop: '1px solid #ddd' }} onClick={onZoomOut} title="Zoom out">-</button>
+      <button style={ctrlBtn} onClick={onZoomIn} title="Увеличить масштаб">+</button>
+      <button style={{ ...ctrlBtn, borderTop: '1px solid #ddd' }} onClick={onZoomOut} title="Уменьшить масштаб">-</button>
     </div>
   )
 }

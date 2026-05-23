@@ -35,7 +35,7 @@ export function useMissionCompute(onMissionReady) {
     try {
       const response = await fetch(`/mission/${missionId}`)
       if (!response.ok) {
-        throw new Error('Failed to refresh mission status')
+        throw new Error('Не удалось обновить статус миссии')
       }
 
       const nextMission = await response.json()
@@ -61,7 +61,7 @@ export function useMissionCompute(onMissionReady) {
         return
       }
       clearPolling()
-      setError(toErrorMessage(error, 'Failed to refresh mission status'))
+      setError(toErrorMessage(error, 'Не удалось обновить статус миссии'))
     }
   }, [clearPolling, onMissionReady])
 
@@ -106,7 +106,7 @@ export function useMissionCompute(onMissionReady) {
       if (requestVersion !== requestVersionRef.current) {
         return
       }
-      setError(toErrorMessage(error, 'Failed to compute mission'))
+      setError(toErrorMessage(error, 'Не удалось рассчитать миссию'))
     } finally {
       if (requestVersion === requestVersionRef.current) {
         setLoading(false)

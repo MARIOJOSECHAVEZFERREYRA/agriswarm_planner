@@ -12,6 +12,13 @@ const STATUS_COLOR = {
   failed:    C.error,
 }
 
+const STATUS_LABEL = {
+  pending:   'ожидание',
+  running:   'выполняется',
+  completed: 'завершено',
+  failed:    'ошибка',
+}
+
 const s = {
   panel: {
     display: 'flex', flexDirection: 'column', gap: 0,
@@ -109,7 +116,7 @@ function HeaderSection() {
   return (
     <div style={s.header}>
       <div style={s.logo}>
-        <span style={s.logoText}>UAV-UAG Mission Planner</span>
+        <span style={s.logoText}>Планировщик миссий БПЛА-НТС</span>
       </div>
     </div>
   )
@@ -118,9 +125,9 @@ function HeaderSection() {
 function AircraftSection({ drones, drone, onDroneChange, onViewSpecs }) {
   return (
     <div style={s.section}>
-      <div style={s.sectionLabel}>Aircraft</div>
+      <div style={s.sectionLabel}>БПЛА</div>
       <div>
-        <div style={s.label}>Drone model</div>
+        <div style={s.label}>Модель БПЛА</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <select style={{ ...s.select, flex: 1 }} value={drone} onChange={e => onDroneChange(e.target.value)}>
             {drones.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
@@ -128,7 +135,7 @@ function AircraftSection({ drones, drone, onDroneChange, onViewSpecs }) {
           <button
             onClick={() => drone && onViewSpecs(drone)}
             disabled={!drone}
-            title="View drone specifications"
+            title="Просмотр характеристик БПЛА"
             style={{
               flexShrink: 0,
               width: 32, height: 32,
@@ -169,7 +176,7 @@ function FieldSection({
     const reader = new FileReader()
     reader.onload = (ev) => {
       try { onLoadField(JSON.parse(ev.target.result)) }
-      catch { alert('Invalid JSON file') }
+      catch { alert('Неверный файл JSON') }
     }
     reader.readAsText(file)
     e.target.value = ''
@@ -180,20 +187,20 @@ function FieldSection({
     // can write back in-place on save.
     try {
       const [handle] = await window.showOpenFilePicker({
-        types: [{ description: 'Field JSON', accept: { 'application/json': ['.json'] } }],
+        types: [{ description: 'JSON поля', accept: { 'application/json': ['.json'] } }],
       })
       const file = await handle.getFile()
       const text = await file.text()
       onLoadField(JSON.parse(text), handle)
     } catch (err) {
-      if (err?.name !== 'AbortError') alert('Failed to open file: ' + err.message)
+      if (err?.name !== 'AbortError') alert('Не удалось открыть файл: ' + err.message)
     }
   }
 
   async function handleSaveField() {
     const doc = buildFieldDoc()
     if (!doc.boundary || doc.boundary.length < 3) {
-      alert('Draw or load a field first.')
+      alert('Сначала нарисуйте или загрузите поле.')
       return
     }
     const json = JSON.stringify(doc, null, 2)
@@ -203,11 +210,11 @@ function FieldSection({
         const writable = await fileHandle.createWritable()
         await writable.write(json)
         await writable.close()
-        setToast(`Saved to ${fileHandle.name}`)
+        setToast(`Сохранено в ${fileHandle.name}`)
         setTimeout(() => setToast(null), 2000)
         return
       } catch (err) {
-        alert('Write failed: ' + err.message)
+        alert('Ошибка записи: ' + err.message)
         return
       }
     }
@@ -217,7 +224,7 @@ function FieldSection({
   async function handleCopyJson() {
     try {
       await navigator.clipboard.writeText(jsonModal)
-      setToast('Copied to clipboard')
+      setToast('Скопировано в буфер обмена')
       setTimeout(() => setToast(null), 1500)
     } catch {
       // clipboard write may be blocked; the textarea is still selectable.
@@ -226,7 +233,7 @@ function FieldSection({
 
   return (
     <div style={s.section}>
-      <div style={s.sectionLabel}>Field</div>
+      <div style={s.sectionLabel}>Поле</div>
 
       <div style={s.btnRow}>
         <Btn
@@ -234,7 +241,7 @@ function FieldSection({
           active={isDrawingPolygon}
           onClick={onToggleDrawPolygon}
         >
-          {isDrawingPolygon ? `Finish (${drawingPtsCount} pts)` : 'Draw Field'}
+          {isDrawingPolygon ? `Завершить (${drawingPtsCount} тчк)` : 'Нарисовать поле'}
         </Btn>
         <Btn
           variant={isDrawingObstacle ? 'warning' : 'default'}
@@ -242,28 +249,28 @@ function FieldSection({
           disabled={!hasField && !isDrawingObstacle}
           onClick={onToggleDrawObstacle}
         >
-          {isDrawingObstacle ? 'Finish Obstacle' : 'Add Obstacle'}
+          {isDrawingObstacle ? 'Завершить препятствие' : 'Добавить препятствие'}
         </Btn>
       </div>
 
       <div style={s.btnRow}>
         {fsaSupported
-          ? <Btn variant='default' onClick={handleOpenFile}>Open Field</Btn>
-          : <Btn variant='default' onClick={() => fileRef.current.click()}>Load JSON</Btn>}
+          ? <Btn variant='default' onClick={handleOpenFile}>Открыть поле</Btn>
+          : <Btn variant='default' onClick={() => fileRef.current.click()}>Загрузить JSON</Btn>}
         <Btn variant='default' disabled={!hasField} onClick={handleSaveField}>
-          {fileHandle ? 'Save' : 'Save As…'}
+          {fileHandle ? 'Сохранить' : 'Сохранить как…'}
         </Btn>
       </div>
 
       <div style={s.btnRow}>
-        <Btn variant='danger' disabled={!hasField && mode === MODE.NONE} onClick={onClear}>Clear All</Btn>
+        <Btn variant='danger' disabled={!hasField && mode === MODE.NONE} onClick={onClear}>Очистить всё</Btn>
       </div>
 
       <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleLoadJSON} />
 
       {fileHandle && (
         <div style={{ fontSize: 11, color: C.muted }}>
-          File: <span style={{ color: '#9ad0ff' }}>{fileHandle.name}</span>
+          Файл: <span style={{ color: '#9ad0ff' }}>{fileHandle.name}</span>
           {loadedMetaName ? ` (${loadedMetaName})` : ''}
         </div>
       )}
@@ -271,7 +278,7 @@ function FieldSection({
       {activeField?.obstacles?.length > 0 && (
         <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ color: '#e36d2e' }}>+</span>
-          {activeField.obstacles.length} obstacle{activeField.obstacles.length > 1 ? 's' : ''} defined
+          Задано препятствий: {activeField.obstacles.length}
         </div>
       )}
 
@@ -287,11 +294,11 @@ function FieldSection({
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontSize: 13, color: C.muted }}>
-                Copy this JSON and save it into your field file.
+                Скопируйте этот JSON и сохраните его в файл вашего поля.
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant='default' onClick={handleCopyJson}>Copy</Btn>
-                <Btn variant='danger' onClick={() => setJsonModal(null)}>Close</Btn>
+                <Btn variant='default' onClick={handleCopyJson}>Копировать</Btn>
+                <Btn variant='danger' onClick={() => setJsonModal(null)}>Закрыть</Btn>
               </div>
             </div>
             <textarea
@@ -322,13 +329,13 @@ function FieldSection({
 const MISSION_TYPES = [
   {
     value: 'static',
-    label: 'Static Base',
-    description: 'UAV returns to a fixed base station to recharge and refill.',
+    label: 'Стационарная база',
+    description: 'БПЛА возвращается на стационарную базовую станцию для подзарядки и дозаправки.',
   },
   {
     value: 'mobile',
-    label: 'Mobile UGV',
-    description: 'UGV moves along a route; UAV meets it at rendezvous points.',
+    label: 'Подвижный НТС',
+    description: 'НТС движется по маршруту; БПЛА встречает его в точках встречи.',
   },
 ]
 
@@ -350,7 +357,7 @@ function GroundSection({
 
   return (
     <div style={s.section}>
-      <div style={s.sectionLabel}>Ground Operations</div>
+      <div style={s.sectionLabel}>Наземные операции</div>
 
       {/* Mode toggle */}
       <div style={{
@@ -397,15 +404,15 @@ function GroundSection({
             onClick={onToggleSetBasePoint}
           >
             {isSettingBase
-              ? 'Click on map…'
+              ? 'Нажмите на карте…'
               : basePoint
-                ? 'Move base station'
-                : 'Set base station'}
+                ? 'Переместить базовую станцию'
+                : 'Задать базовую станцию'}
           </Btn>
 
           {basePoint && (
             <div style={{ fontSize: 11, color: C.muted }}>
-              Base: ({basePoint[0].toFixed(1)}, {basePoint[1].toFixed(1)})
+              База: ({basePoint[0].toFixed(1)}, {basePoint[1].toFixed(1)})
             </div>
           )}
         </>
@@ -423,22 +430,22 @@ function GroundSection({
           >
             {isDrawingUgv
               ? drawingLengthM > 0
-                ? `Finish Route (${formatMeters(drawingLengthM)})`
-                : `Finish Route (${drawingPtsCount} pts)`
+                ? `Завершить маршрут (${formatMeters(drawingLengthM)})`
+                : `Завершить маршрут (${drawingPtsCount} тчк)`
               : hasRoute
-                ? `Redraw UGV Route (${formatMeters(routeLengthM)})`
-                : 'Draw UGV Route'}
+                ? `Перерисовать маршрут НТС (${formatMeters(routeLengthM)})`
+                : 'Нарисовать маршрут НТС'}
           </Btn>
 
           {hasRoute && !isDrawingUgv && (
             <div style={{ fontSize: 11, color: C.muted }}>
-              Route: {formatMeters(routeLengthM)} · {ugvRoute.length} waypoints
+              Маршрут: {formatMeters(routeLengthM)} · {ugvRoute.length} путевых точек
             </div>
           )}
 
           <div style={s.btnRow}>
             <div>
-              <div style={s.label}>UGV speed (m/s)</div>
+              <div style={s.label}>Скорость НТС (м/с)</div>
               <input
                 style={s.input} type="number"
                 min={0.1} max={10} step={0.1}
@@ -446,7 +453,7 @@ function GroundSection({
               />
             </div>
             <div>
-              <div style={s.label}>Service time (s)</div>
+              <div style={s.label}>Время обслуживания (с)</div>
               <input
                 style={s.input} type="number"
                 min={30} max={1800} step={30}
@@ -498,17 +505,17 @@ function ParametersSection({
 
   return (
     <div style={s.section}>
-      <div style={s.sectionLabel}>Mission Parameters</div>
+      <div style={s.sectionLabel}>Параметры миссии</div>
 
       <div style={s.btnRow}>
         <ParamInput
-          label="Spray width (m)"
+          label="Ширина распыления (м)"
           value={sprayWidth} onChange={setSprayWidth}
           min={d?.spray_swath_min_m} max={d?.spray_swath_max_m}
           hint={<RangeHint min={d?.spray_swath_min_m} max={d?.spray_swath_max_m} unit=" m" />}
         />
         <ParamInput
-          label="App rate (L/ha)"
+          label="Норма внесения (л/га)"
           value={appRate} onChange={setAppRate}
           min={d?.app_rate_min_l_ha} max={d?.app_rate_max_l_ha}
           hint={<RangeHint min={d?.app_rate_min_l_ha} max={d?.app_rate_max_l_ha} />}
@@ -517,31 +524,31 @@ function ParametersSection({
 
       <div style={s.btnRow}>
         <ParamInput
-          label="Speed (m/s)"
+          label="Скорость (м/с)"
           value={speed} onChange={setSpeed}
           min={d?.speed_min_ms} max={d?.speed_max_ms}
           hint={<RangeHint min={d?.speed_min_ms} max={d?.speed_max_ms} unit=" m/s" />}
         />
         <ParamInput
-          label="Margin (m)"
+          label="Отступ (м)"
           value={margin} onChange={setMargin}
           min={0}
         />
       </div>
 
       <div>
-        <div style={s.label}>Planning strategy</div>
+        <div style={s.label}>Стратегия планирования</div>
         <select style={s.select} value={strategy} onChange={e => setStrategy(e.target.value)}>
-          <option value="grid">GA (exhaustivo, recomendado)</option>
-          <option value="genetic">Genetic Algorithm (GA)</option>
-          <option value="fixed">Fixed Angle (sin optimización)</option>
+          <option value="grid">GA (исчерпывающий, рекомендуется)</option>
+          <option value="genetic">Генетический алгоритм (GA)</option>
+          <option value="fixed">Фиксированный угол (без оптимизации)</option>
         </select>
       </div>
 
       {strategy === 'fixed' && (
         <div style={{ marginTop: 8 }}>
           <ParamInput
-            label="Sweep angle (°)"
+            label="Угол прохода (°)"
             value={fixedAngle}
             onChange={setFixedAngle}
             min={0}
@@ -571,17 +578,17 @@ function ResultsSection({ mission, onExport, onStartSim, onStopSim, simEnabled }
 
   return (
     <div style={s.section}>
-      <div style={s.sectionLabel}>Results</div>
+      <div style={s.sectionLabel}>Результаты</div>
 
       <div style={s.stat}>
-        <span style={s.statKey}>Status</span>
+        <span style={s.statKey}>Статус</span>
         <span style={{
           ...s.badge,
           background: STATUS_COLOR[mission.status] + '20',
           color: STATUS_COLOR[mission.status],
           border: `1px solid ${STATUS_COLOR[mission.status]}40`,
         }}>
-          {mission.status}
+          {STATUS_LABEL[mission.status] ?? mission.status}
         </span>
       </div>
 
@@ -590,59 +597,59 @@ function ResultsSection({ mission, onExport, onStartSim, onStopSim, simEnabled }
 
         {/* Geometry */}
         <MetricRow
-          label="Optimal angle"
+          label="Оптимальный угол"
           value={`${mission.best_angle?.toFixed(1)}°`}
         />
         {mission.coverage_area && (
           <MetricRow
-            label="Coverage area"
-            value={`${(mission.coverage_area / 10000).toFixed(2)} ha`}
+            label="Площадь покрытия"
+            value={`${(mission.coverage_area / 10000).toFixed(2)} га`}
           />
         )}
         {mission.n_cycles != null && (
-          <MetricRow label="Flight cycles" value={mission.n_cycles} />
+          <MetricRow label="Циклы полёта" value={mission.n_cycles} />
         )}
-        <MetricRow label="Waypoints" value={mission.waypoints?.length} />
+        <MetricRow label="Путевые точки" value={mission.waypoints?.length} />
 
         {/* Mission metrics from MissionAnalyzer */}
         {metrics && <>
           <Divider />
           <MetricRow
-            label="Spray distance"
-            value={`${metrics.spray_dist_km?.toFixed(3)} km`}
+            label="Дистанция распыления"
+            value={`${metrics.spray_dist_km?.toFixed(3)} км`}
           />
           <MetricRow
-            label="Dead distance"
-            value={`${metrics.dead_dist_km?.toFixed(3)} km`}
+            label="Холостая дистанция"
+            value={`${metrics.dead_dist_km?.toFixed(3)} км`}
           />
           <MetricRow
-            label="Efficiency"
+            label="Эффективность"
             value={`${metrics.efficiency_ratio?.toFixed(1)} %`}
           />
           <MetricRow
-            label="Flight time"
-            value={`${metrics.flight_time_min?.toFixed(1)} min`}
+            label="Время полёта"
+            value={`${metrics.flight_time_min?.toFixed(1)} мин`}
           />
           <MetricRow
-            label="Total op. time"
-            value={`${metrics.total_op_time_min?.toFixed(1)} min`}
+            label="Общее время операции"
+            value={`${metrics.total_op_time_min?.toFixed(1)} мин`}
           />
           <MetricRow
-            label="Productivity"
-            value={`${metrics.productivity_ha_hr?.toFixed(2)} ha/hr`}
+            label="Производительность"
+            value={`${metrics.productivity_ha_hr?.toFixed(2)} га/ч`}
           />
           <MetricRow
-            label="Applied dosage"
-            value={`${metrics.real_dosage_l_ha?.toFixed(1)} L/ha`}
+            label="Внесённая доза"
+            value={`${metrics.real_dosage_l_ha?.toFixed(1)} л/га`}
           />
         </>}
 
         {metrics?.rv_n_rendezvous != null && metrics.rv_n_rendezvous > 0 && <>
           <Divider />
-          <MetricRow label="Rendezvous stops" value={metrics.rv_n_rendezvous} />
+          <MetricRow label="Остановки в точках встречи" value={metrics.rv_n_rendezvous} />
           <MetricRow
-            label="UAV wait (total)"
-            value={`${metrics.rv_wait_min?.toFixed(1)} min`}
+            label="Ожидание БПЛА (всего)"
+            value={`${metrics.rv_wait_min?.toFixed(1)} мин`}
           />
         </>}
 
@@ -658,14 +665,14 @@ function ResultsSection({ mission, onExport, onStartSim, onStopSim, simEnabled }
                 background: C.success, display: 'inline-block',
                 boxShadow: `0 0 5px ${C.success}`,
               }} />
-              Simulation active
+              Симуляция активна
             </span>
-            <Btn variant='danger' fullWidth={false} onClick={onStopSim}>Stop</Btn>
+            <Btn variant='danger' fullWidth={false} onClick={onStopSim}>Стоп</Btn>
           </div>
         ) : (
-          <Btn variant='primary' onClick={onStartSim}>Run Simulation</Btn>
+          <Btn variant='primary' onClick={onStartSim}>Запустить симуляцию</Btn>
         )}
-        <Btn variant='default' onClick={onExport}>Export Mission</Btn>
+        <Btn variant='default' onClick={onExport}>Экспорт миссии</Btn>
       </>}
 
       {mission.status === 'failed' && (
@@ -676,7 +683,7 @@ function ResultsSection({ mission, onExport, onStartSim, onStopSim, simEnabled }
 }
 
 function ExportDialog({ onConfirm, onCancel }) {
-  const [name, setName] = useState('Mission')
+  const [name, setName] = useState('Миссия')
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
@@ -689,9 +696,9 @@ function ExportDialog({ onConfirm, onCancel }) {
         display: 'flex', flexDirection: 'column', gap: 14,
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
       }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Export Mission</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Экспорт миссии</div>
         <div>
-          <div style={s.label}>File name</div>
+          <div style={s.label}>Имя файла</div>
           <input
             style={s.input}
             value={name}
@@ -701,9 +708,9 @@ function ExportDialog({ onConfirm, onCancel }) {
           />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Btn variant='default' onClick={onCancel}>Cancel</Btn>
+          <Btn variant='default' onClick={onCancel}>Отмена</Btn>
           <Btn variant='primary' disabled={!name.trim()} onClick={() => onConfirm(name.trim())}>
-            Download JSON
+            Скачать JSON
           </Btn>
         </div>
       </div>
@@ -774,11 +781,11 @@ export default function MissionPanel({
     const isMobileMode = missionType === 'mobile'
     const hasUgvRouteOk = ugvRoute && ugvRoute.length >= 2
     if (isMobileMode && !hasUgvRouteOk) {
-      setValidationError('Please draw a UGV route before computing the mission.')
+      setValidationError('Пожалуйста, нарисуйте маршрут НТС перед расчётом миссии.')
       return
     }
     if (!isMobileMode && !basePoint) {
-      setValidationError('Please set a base point before computing the mission.')
+      setValidationError('Пожалуйста, задайте точку базы перед расчётом миссии.')
       return
     }
     const sw = Number(sprayWidth)
@@ -787,17 +794,17 @@ export default function MissionPanel({
     const mg = Number(margin)
 
     const rangeCheck = (val, name, unit, minKey, maxKey) => {
-      if (!val || val <= 0) return `${name} must be > 0.`
-      if (defaults?.[minKey] != null && val < defaults[minKey]) return `${name} too low (min ${defaults[minKey]} ${unit}).`
-      if (defaults?.[maxKey] != null && val > defaults[maxKey]) return `${name} too high (max ${defaults[maxKey]} ${unit}).`
+      if (!val || val <= 0) return `${name}: значение должно быть > 0.`
+      if (defaults?.[minKey] != null && val < defaults[minKey]) return `${name}: слишком мало (мин ${defaults[minKey]} ${unit}).`
+      if (defaults?.[maxKey] != null && val > defaults[maxKey]) return `${name}: слишком много (макс ${defaults[maxKey]} ${unit}).`
       return null
     }
 
     const err =
-      rangeCheck(sw, 'Spray width', 'm', 'spray_swath_min_m', 'spray_swath_max_m') ||
-      rangeCheck(ar, 'App rate', 'L/ha', 'app_rate_min_l_ha', 'app_rate_max_l_ha') ||
-      rangeCheck(sp, 'Speed', 'm/s', 'speed_min_ms', 'speed_max_ms') ||
-      (isNaN(mg) || mg < 0 ? 'Margin must be >= 0.' : null)
+      rangeCheck(sw, 'Ширина распыления', 'м', 'spray_swath_min_m', 'spray_swath_max_m') ||
+      rangeCheck(ar, 'Норма внесения', 'л/га', 'app_rate_min_l_ha', 'app_rate_max_l_ha') ||
+      rangeCheck(sp, 'Скорость', 'м/с', 'speed_min_ms', 'speed_max_ms') ||
+      (isNaN(mg) || mg < 0 ? 'Отступ должен быть >= 0.' : null)
     if (err) {
       setValidationError(err)
       return
@@ -961,27 +968,27 @@ export default function MissionPanel({
         {error && <div style={{ ...s.errorBox, marginBottom: 10 }}>{error}</div>}
         <Btn variant='primary' disabled={!canCompute} onClick={handleCompute}>
           {loading
-            ? <><Spinner /> Computing…</>
-            : 'Compute Mission'}
+            ? <><Spinner /> Расчёт…</>
+            : 'Рассчитать миссию'}
         </Btn>
         {mode === MODE.DRAW_UGV_ROUTE && (
           <div style={{ fontSize: 11, color: C.warning, textAlign: 'center', marginTop: 7 }}>
-            Finish the UGV route before computing
+            Завершите маршрут НТС перед расчётом
           </div>
         )}
         {mode !== MODE.DRAW_UGV_ROUTE && !hasField && (
           <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 7 }}>
-            Draw or load a field to continue
+            Нарисуйте или загрузите поле, чтобы продолжить
           </div>
         )}
         {mode !== MODE.DRAW_UGV_ROUTE && hasField && !needsUgvRoute && !hasBasePoint && (
           <div style={{ fontSize: 11, color: C.warning, textAlign: 'center', marginTop: 7 }}>
-            Set a base station before computing
+            Задайте базовую станцию перед расчётом
           </div>
         )}
         {mode !== MODE.DRAW_UGV_ROUTE && hasField && needsUgvRoute && !hasUgvRoute && (
           <div style={{ fontSize: 11, color: C.warning, textAlign: 'center', marginTop: 7 }}>
-            Draw the UGV route to enable mobile rendezvous
+            Нарисуйте маршрут НТС, чтобы включить подвижную точку встречи
           </div>
         )}
       </div>

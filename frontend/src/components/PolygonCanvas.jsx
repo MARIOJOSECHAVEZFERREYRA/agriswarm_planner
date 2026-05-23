@@ -79,7 +79,7 @@ function SelectableTrajectoryPolyline({
             onCycleToggle(cycleIndex)
           }}
         >
-          <title>Cycle {cycleIndex + 1}</title>
+          <title>Цикл {cycleIndex + 1}</title>
         </polyline>
       )}
     </g>

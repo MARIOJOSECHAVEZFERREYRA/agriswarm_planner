@@ -12,8 +12,8 @@ export default function LayerToggle({ highlight, onHighlight }) {
         onClick={() => onHighlight(isActive ? 'all' : keyName)}
         aria-label={
           isActive
-            ? 'Show all layers'
-            : `Highlight ${label.toLowerCase()} layer`
+            ? 'Показать все слои'
+            : `Выделить слой «${label}»`
         }
         aria-pressed={isActive}
         style={{
@@ -46,9 +46,9 @@ export default function LayerToggle({ highlight, onHighlight }) {
         padding: '6px 10px',
       }}
     >
-      {renderButton('Spray', 'sweep', TRAJ.sweep)}
-      {renderButton('Transit', 'ferry', TRAJ.ferry)}
-      {renderButton('Deadhead', 'deadhead', TRAJ.deadhead)}
+      {renderButton('Опрыскивание', 'sweep', TRAJ.sweep)}
+      {renderButton('Транзит', 'ferry', TRAJ.ferry)}
+      {renderButton('Холостой ход', 'deadhead', TRAJ.deadhead)}
     </FloatingPanel>
   )
 }

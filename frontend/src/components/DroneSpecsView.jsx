@@ -97,7 +97,7 @@ export default function DroneSpecsView({ droneName, onBack }) {
     fetch(`/drones/${encodeURIComponent(droneName)}`, { signal: controller.signal })
       .then(response => {
         if (!response.ok) {
-          throw new Error('Drone not found')
+          throw new Error('БПЛА не найден')
         }
         return response.json()
       })
@@ -112,69 +112,69 @@ export default function DroneSpecsView({ droneName, onBack }) {
   }, [droneName])
 
   if (error) return <div style={s.error}>{error}</div>
-  if (!specs) return <div style={s.loading}>Loading specifications…</div>
+  if (!specs) return <div style={s.loading}>Загрузка характеристик…</div>
 
   return (
     <div style={s.root}>
       <button style={s.backBtn} onClick={onBack}>
-        ‹ Back to map
+        ‹ Назад к карте
       </button>
 
       <div style={s.title}>{specs.name}</div>
       <div style={s.subtitle}>
-        Agricultural spray drone &nbsp;·&nbsp;
-        <span style={s.tag}>{specs.num_rotors} rotors</span>
+        Сельскохозяйственный БПЛА для опрыскивания &nbsp;·&nbsp;
+        <span style={s.tag}>{specs.num_rotors} винтов</span>
       </div>
 
       <div style={s.grid}>
 
-        <Card title="Mass">
-          <SpecRow label="Empty (structure + electronics)" value={specs.mass_empty_kg} unit="kg" />
-          <SpecRow label="Battery pack" value={specs.mass_battery_kg} unit="kg" />
-          <SpecRow label="Full tank (reagent)" value={specs.mass_tank_full_kg} unit="kg" />
+        <Card title="Масса">
+          <SpecRow label="Без нагрузки (конструкция + электроника)" value={specs.mass_empty_kg} unit="kg" />
+          <SpecRow label="Аккумуляторный блок" value={specs.mass_battery_kg} unit="kg" />
+          <SpecRow label="Полный бак (реагент)" value={specs.mass_tank_full_kg} unit="kg" />
           <div style={{ height: 1, background: C.border, margin: '8px 0' }} />
-          <SpecRow label="Max takeoff mass" value={specs.mass_takeoff_max_kg.toFixed(1)} unit="kg" />
+          <SpecRow label="Макс. взлётная масса" value={specs.mass_takeoff_max_kg.toFixed(1)} unit="kg" />
         </Card>
 
-        <Card title="Battery & Energy">
-          <SpecRow label="Capacity" value={specs.battery_capacity_wh} unit="Wh" />
-          <SpecRow label="Nominal voltage" value={specs.battery_voltage_v} unit="V" />
-          <SpecRow label="Reserve" value={specs.battery_reserve_pct} unit="%" />
-          <SpecRow label="Usable energy" value={(specs.battery_capacity_wh * (1 - specs.battery_reserve_pct / 100)).toFixed(0)} unit="Wh" />
-          <SpecRow label="Charge time" value={specs.battery_charge_time_min} unit="min" />
+        <Card title="Аккумулятор и энергия">
+          <SpecRow label="Ёмкость" value={specs.battery_capacity_wh} unit="Wh" />
+          <SpecRow label="Номинальное напряжение" value={specs.battery_voltage_v} unit="V" />
+          <SpecRow label="Резерв" value={specs.battery_reserve_pct} unit="%" />
+          <SpecRow label="Полезная энергия" value={(specs.battery_capacity_wh * (1 - specs.battery_reserve_pct / 100)).toFixed(0)} unit="Wh" />
+          <SpecRow label="Время зарядки" value={specs.battery_charge_time_min} unit="min" />
         </Card>
 
-        <Card title="Hover Power (Actuator Disk)">
-          <SpecRow label="At empty mass" value={specs.power_hover_empty_w} unit="W" />
-          <SpecRow label="At full tank mass" value={specs.power_hover_full_w} unit="W" />
-          <SpecRow label="Spray pump" value={specs.spray_pump_power_w} unit="W" />
+        <Card title="Мощность висения (диск актуатора)">
+          <SpecRow label="При массе без нагрузки" value={specs.power_hover_empty_w} unit="W" />
+          <SpecRow label="При полном баке" value={specs.power_hover_full_w} unit="W" />
+          <SpecRow label="Насос опрыскивания" value={specs.spray_pump_power_w} unit="W" />
           <div style={{ height: 1, background: C.border, margin: '8px 0' }} />
-          <SpecRow label="Max spray power" value={specs.power_hover_full_w + specs.spray_pump_power_w} unit="W" />
+          <SpecRow label="Макс. мощность при опрыскивании" value={specs.power_hover_full_w + specs.spray_pump_power_w} unit="W" />
         </Card>
 
-        <Card title="Kinematics">
-          <SpecRow label="Cruise (spray)" value={specs.speed_cruise_ms} unit="m/s" />
-          <SpecRow label="Max (transit)" value={specs.speed_max_ms} unit="m/s" />
-          <SpecRow label="Vertical" value={specs.speed_vertical_ms} unit="m/s" />
+        <Card title="Кинематика">
+          <SpecRow label="Крейсерская (опрыскивание)" value={specs.speed_cruise_ms} unit="m/s" />
+          <SpecRow label="Макс. (перелёт)" value={specs.speed_max_ms} unit="m/s" />
+          <SpecRow label="Вертикальная" value={specs.speed_vertical_ms} unit="m/s" />
         </Card>
 
-        <Card title="Turn Model">
-          <SpecRow label="180° turn duration" value={specs.turn_duration_s} unit="s" />
-          <SpecRow label="Power factor during turn" value={specs.turn_power_factor} unit="× P_hover" />
+        <Card title="Модель разворота">
+          <SpecRow label="Длительность разворота на 180°" value={specs.turn_duration_s} unit="s" />
+          <SpecRow label="Коэффициент мощности при развороте" value={specs.turn_power_factor} unit="× P_hover" />
         </Card>
 
-        <Card title="Spray System">
-          <SpecRow label="Swath min" value={specs.spray_swath_min_m} unit="m" />
-          <SpecRow label="Swath max" value={specs.spray_swath_max_m} unit="m" />
-          <SpecRow label="Flow rate" value={specs.spray_flow_rate_lpm} unit="L/min" />
-          <SpecRow label="Dose default" value={specs.app_rate_default_l_ha} unit="L/ha" />
-          <SpecRow label="Dose min" value={specs.app_rate_min_l_ha} unit="L/ha" />
-          <SpecRow label="Dose max" value={specs.app_rate_max_l_ha} unit="L/ha" />
-          <SpecRow label="Operating height" value={specs.spray_height_m} unit="m" />
+        <Card title="Система опрыскивания">
+          <SpecRow label="Мин. ширина опрыскивания" value={specs.spray_swath_min_m} unit="m" />
+          <SpecRow label="Макс. ширина опрыскивания" value={specs.spray_swath_max_m} unit="m" />
+          <SpecRow label="Расход" value={specs.spray_flow_rate_lpm} unit="L/min" />
+          <SpecRow label="Доза по умолчанию" value={specs.app_rate_default_l_ha} unit="L/ha" />
+          <SpecRow label="Мин. доза" value={specs.app_rate_min_l_ha} unit="L/ha" />
+          <SpecRow label="Макс. доза" value={specs.app_rate_max_l_ha} unit="L/ha" />
+          <SpecRow label="Рабочая высота" value={specs.spray_height_m} unit="m" />
         </Card>
 
-        <Card title="Operational">
-          <SpecRow label="Service time (rendezvous)" value={specs.service_time_s} unit="s" />
+        <Card title="Эксплуатация">
+          <SpecRow label="Время обслуживания (точка встречи)" value={specs.service_time_s} unit="s" />
         </Card>
 
       </div>

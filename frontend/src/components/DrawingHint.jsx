@@ -13,13 +13,13 @@ export default function DrawingHint({ mode }) {
   let text = ''
 
   if (mode === 'draw_polygon') {
-    text = 'Click to add points · Right-click to undo · Press "Finish" when done'
+    text = 'Щёлкните, чтобы добавить точки · Правый клик — отменить · По завершении нажмите «Готово»'
   } else if (mode === 'set_base_point') {
-    text = 'Click on the map to set the base or recharge point'
+    text = 'Щёлкните на карте, чтобы задать базу или точку подзарядки'
   } else if (mode === 'draw_ugv_route') {
-    text = 'Click to add UGV waypoints · Right-click to undo · Press "Finish UGV Route" when done (min 2 points)'
+    text = 'Щёлкните, чтобы добавить путевые точки НТС · Правый клик — отменить · По завершении нажмите «Завершить маршрут НТС» (мин. 2 точки)'
   } else {
-    text = 'Click to add obstacle points · Right-click to undo · Press "Finish Obstacle" when done'
+    text = 'Щёлкните, чтобы добавить точки препятствия · Правый клик — отменить · По завершении нажмите «Завершить препятствие»'
   }
 
   return (

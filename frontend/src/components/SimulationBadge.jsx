@@ -77,8 +77,8 @@ export default function SimulationBadge({
         <span style={{ color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
           {formatSimTime(simTimeS)}
         </span>
-        <CtrlBtn title="Expand" onClick={() => { setMinimized(false); onResume() }}>⤢</CtrlBtn>
-        <CtrlBtn title="Close simulation" variant="danger" onClick={onDismiss}>✕</CtrlBtn>
+        <CtrlBtn title="Развернуть" onClick={() => { setMinimized(false); onResume() }}>⤢</CtrlBtn>
+        <CtrlBtn title="Закрыть симуляцию" variant="danger" onClick={onDismiss}>✕</CtrlBtn>
       </FloatingPanel>
     )
   }
@@ -98,15 +98,15 @@ export default function SimulationBadge({
       {/* Playback controls */}
       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
         <CtrlBtn
-          title={isPaused ? 'Resume' : 'Pause'}
+          title={isPaused ? 'Продолжить' : 'Пауза'}
           variant={isPaused ? 'warning' : 'default'}
           onClick={isPaused ? onResume : onPause}
         >
           {isPaused ? '▶' : '⏸'}
         </CtrlBtn>
-        <CtrlBtn title="Restart" onClick={onRestart}>⟳</CtrlBtn>
-        <CtrlBtn title="Minimize" onClick={() => { setMinimized(true); onPause() }}>−</CtrlBtn>
-        <CtrlBtn title="Close simulation" variant="danger" onClick={onDismiss}>✕</CtrlBtn>
+        <CtrlBtn title="Перезапустить" onClick={onRestart}>⟳</CtrlBtn>
+        <CtrlBtn title="Свернуть" onClick={() => { setMinimized(true); onPause() }}>−</CtrlBtn>
+        <CtrlBtn title="Закрыть симуляцию" variant="danger" onClick={onDismiss}>✕</CtrlBtn>
       </div>
 
       <Sep />

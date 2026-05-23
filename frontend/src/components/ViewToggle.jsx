@@ -17,7 +17,7 @@ export default function ViewToggle({ view, onChangeView }) {
           key={currentView}
           type="button"
           onClick={() => onChangeView(currentView)}
-          aria-label={`Switch to ${currentView} view`}
+          aria-label={`Переключить на вид «${currentView === 'map' ? 'Карта' : 'Холст'}»`}
           aria-pressed={view === currentView}
           style={{
             padding: '5px 14px',
@@ -30,7 +30,7 @@ export default function ViewToggle({ view, onChangeView }) {
             fontWeight: view === currentView ? 600 : 400,
           }}
         >
-          {currentView === 'map' ? 'Map' : 'Canvas'}
+          {currentView === 'map' ? 'Карта' : 'Холст'}
         </button>
       ))}
     </div>

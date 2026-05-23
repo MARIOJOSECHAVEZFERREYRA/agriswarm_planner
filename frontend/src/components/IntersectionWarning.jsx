@@ -15,7 +15,7 @@ export default function IntersectionWarning({ message }) {
         whiteSpace: 'nowrap',
       }}
     >
-      {message ?? 'Invalid shape: polygon edges cannot intersect'}
+      {message ?? 'Недопустимая форма: рёбра полигона не могут пересекаться'}
     </FloatingPanel>
   )
 }

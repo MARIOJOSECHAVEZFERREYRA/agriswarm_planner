@@ -453,7 +453,7 @@ export default function MapView({
       setHoveredCycle(ci)
       map.getCanvas().style.cursor = 'pointer'
       if (ci !== null) {
-        popup.setLngLat(e.lngLat).setHTML(`Cycle ${ci + 1}`).addTo(map)
+        popup.setLngLat(e.lngLat).setHTML(`Цикл ${ci + 1}`).addTo(map)
       }
     }
     const onLeave = () => {

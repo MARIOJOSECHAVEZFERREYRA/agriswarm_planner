@@ -9,8 +9,17 @@ const VEHICLE_COLORS = {
 
 const FALLBACK_COLOR = '#9E9E9E'
 
+const VEHICLE_LABELS = {
+  uav: 'БПЛА',
+  ugv: 'НТС',
+}
+
 function getVehicleColor(vehicleId) {
   return VEHICLE_COLORS[vehicleId] ?? FALLBACK_COLOR
+}
+
+function getVehicleLabel(vehicleId) {
+  return VEHICLE_LABELS[vehicleId] ?? vehicleId.toUpperCase()
 }
 
 function createMapMarkerElement(color) {
@@ -68,7 +77,7 @@ function VehicleSvgMarker({ vehicle, toSvg, px }) {
         paintOrder="stroke fill"
         style={{ userSelect: 'none', pointerEvents: 'none' }}
       >
-        {vehicle.vehicle_id.toUpperCase()}
+        {getVehicleLabel(vehicle.vehicle_id)}
       </text>
       {vehicle.vehicle_id === 'uav' && (
         <>
@@ -123,7 +132,7 @@ export default function VehicleOverlay({
           .setLngLat(lngLat)
           .setPopup(
             new maplibregl.Popup({ offset: 16 }).setText(
-              vehicle.vehicle_id.toUpperCase()
+              getVehicleLabel(vehicle.vehicle_id)
             )
           )
           .addTo(mapRef.current)

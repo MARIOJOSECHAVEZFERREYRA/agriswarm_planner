@@ -293,7 +293,6 @@ class SweepAngleOptimizer:
                 cache[angle] = self._evaluate_angle(
                     angle,
                     polygon,
-                    target_area_S,
                     obstacle_union=obstacle_union,
                     base_point=base_point,
                 )

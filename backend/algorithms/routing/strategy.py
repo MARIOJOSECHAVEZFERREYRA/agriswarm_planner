@@ -130,7 +130,7 @@ class FixedAngleStrategy(MissionPlannerStrategy):
         obstacle_union = build_obstacle_union(polygon)
 
         result = optimizer._evaluate_angle(
-            self.angle, polygon, polygon.area,
+            self.angle, polygon,
             obstacle_union=obstacle_union,
             base_point=base_point,
         )
